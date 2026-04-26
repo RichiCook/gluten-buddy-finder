@@ -23,6 +23,16 @@ function decodeHtml(s: string): string {
     .replace(/&gt;/g, ">");
 }
 
+function normalizeInputUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^\/\//.test(trimmed)) return `https:${trimmed}`;
+  if (/^tps?:\/\//i.test(trimmed)) return `ht${trimmed}`;
+  if (/^ttps?:\/\//i.test(trimmed)) return `h${trimmed}`;
+  return `https://${trimmed.replace(/^\/+/, "")}`;
+}
+
 export function extractFromHtml(html: string, baseUrl: string) {
   // Try JSON-LD product first
   const ldMatches = [...html.matchAll(
@@ -94,7 +104,8 @@ serve(async (req) => {
       });
     }
 
-    const resp = await fetch(url, {
+    const normalizedUrl = normalizeInputUrl(url);
+    const resp = await fetch(normalizedUrl, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (compatible; GlutenBabyBot/1.0; +https://glutenbaby.app)",
@@ -111,8 +122,8 @@ serve(async (req) => {
       );
     }
     const html = await resp.text();
-    const data = extractFromHtml(html, url);
-    return new Response(JSON.stringify({ ...data, source_url: url }), {
+    const data = extractFromHtml(html, normalizedUrl);
+    return new Response(JSON.stringify({ ...data, source_url: normalizedUrl }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
