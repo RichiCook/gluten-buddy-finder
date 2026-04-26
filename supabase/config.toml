@@ -1,0 +1,13 @@
+project_id = "nvfulebzhtopywcjqbwr"
+
+[functions.recognize-image]
+verify_jwt = false
+
+[functions.extract-product-url]
+verify_jwt = false
+
+[functions.extract-product-list]
+verify_jwt = false
+
+[functions.match-products]
+verify_jwt = false
