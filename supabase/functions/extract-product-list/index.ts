@@ -86,7 +86,7 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     if (/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon|loader|spinner|brand)/i.test(image)) continue;
 
     // Try alt first, then alt placed BEFORE src in the same <img>
-    let altName = imgMatch[2];
+    let altName: string | undefined = imgMatch[2];
     if (!altName) {
       const altOnly = inner.match(/<img[^>]*\balt=["']([^"']+)["']/i);
       altName = altOnly?.[1];
