@@ -108,37 +108,21 @@ function extractCards(html: string, baseUrl: URL): Card[] {
 
 /** Extract data attributes from the listing page used for AJAX pagination (farmacieglutenfree-style sites). */
 function extractAjaxState(html: string) {
-  // <... id="allProductIds" data-value='[...]' data-tipo='...' ...>
-  const m = html.match(
-    /id=["']allProductIds["'][^>]*data-value=['"](\[[^'"]*\])['"][^>]*data-tipo=['"]([^'"]*)['"]/,
-  ) ||
-    html.match(
-      /data-tipo=['"]([^'"]*)['"][^>]*id=["']allProductIds["'][^>]*data-value=['"](\[[^'"]*\])['"]/,
-    );
-  if (!m) return null;
-  let idsRaw: string, tipo: string;
-  if (m.length === 3 && m[1].startsWith("[")) {
-    idsRaw = m[1];
-    tipo = m[2];
-  } else {
-    tipo = m[1];
-    idsRaw = m[2];
-  }
+  // <... id="allProductIds" data-value='[...]'  (data-tipo is optional)
+  const idsMatch = html.match(
+    /id=["']allProductIds["'][^>]*?data-value=['"](\[[^'"]*\])['"]/,
+  );
+  if (!idsMatch) return null;
   let allIds: string[] = [];
   try {
-    allIds = JSON.parse(idsRaw);
+    allIds = JSON.parse(idsMatch[1]);
   } catch {
     return null;
   }
-  // already-rendered ids
-  const loadedIds: string[] = [];
-  for (const bp of html.matchAll(/class=["'][^"']*block-product[^"']*["'][^>]*data-value=['"](\d+)['"]/g)) {
-    loadedIds.push(bp[1]);
-  }
-  for (const bp of html.matchAll(/data-value=['"](\d+)['"][^>]*class=["'][^"']*block-product[^"']*["']/g)) {
-    loadedIds.push(bp[1]);
-  }
-  return { allIds, loadedIds, tipo };
+  const tipoMatch = html.match(/id=["']allProductIds["'][^>]*?data-tipo=['"]([^'"]*)['"]/) ||
+    html.match(/data-tipo=['"]([^'"]*)['"][^>]*id=["']allProductIds["']/);
+  const tipo = tipoMatch?.[1] ?? "";
+  return { allIds, tipo };
 }
 
 serve(async (req) => {
