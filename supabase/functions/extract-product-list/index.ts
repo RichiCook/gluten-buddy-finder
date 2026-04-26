@@ -131,10 +131,7 @@ serve(async (req) => {
       });
     }
 
-    let normalized = url.trim();
-    if (!/^https?:\/\//i.test(normalized)) {
-      normalized = "https://" + normalized.replace(/^\/+/, "");
-    }
+    const normalized = normalizeInputUrl(url);
     const baseUrl = new URL(normalized);
 
     const resp = await fetch(normalized, {
