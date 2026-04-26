@@ -71,21 +71,26 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     out.push({ name, image: absImg, source_url: abs });
   }
 
-  // Generic: anchor that wraps (or is followed by) an <img> with name in alt or in a title element
+  // Generic: anchor that wraps (or is followed by) an <img>. Allow large inner content for sites with long onclick handlers.
   const anchorImgRe =
-    /<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]{0,1500}?)<\/a>/gi;
+    /<a\b[^>]*\bhref=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   for (const m of html.matchAll(anchorImgRe)) {
     const href = m[1];
     const inner = m[2];
+    if (inner.length > 5000) continue;
     const imgMatch = inner.match(
-      /<img[^>]+(?:data-src|data-original|data-lazy|src)=["']([^"']+\.(?:jpe?g|png|webp|gif)[^"']*)["'][^>]*(?:alt=["']([^"']*)["'])?/i,
+      /<img[^>]*?\b(?:data-src|data-original|data-lazy|src)=["']([^"']+\.(?:jpe?g|png|webp|gif)[^"']*)["'][^>]*?(?:\balt=["']([^"']*)["'])?/i,
     );
     if (!imgMatch) continue;
     const image = imgMatch[1];
-    // Skip obvious non-product images
-    if (/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon)/i.test(image)) continue;
+    if (/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon|loader|spinner|brand)/i.test(image)) continue;
 
-    const altName = imgMatch[2];
+    // Try alt first, then alt placed BEFORE src in the same <img>
+    let altName = imgMatch[2];
+    if (!altName) {
+      const altOnly = inner.match(/<img[^>]*\balt=["']([^"']+)["']/i);
+      altName = altOnly?.[1];
+    }
     const titleMatch = inner.match(/<(?:h\d|p|span|div)[^>]*>([\s\S]*?)<\/(?:h\d|p|span|div)>/i);
     const name = stripTags(altName || titleMatch?.[1] || "");
     push(href, name, image);
