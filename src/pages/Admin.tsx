@@ -335,11 +335,26 @@ function ImportFromUrl() {
 
       {candidates.length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold">{candidates.length} candidati</p>
-            <Button size="sm" onClick={saveSelected} disabled={selected.size === 0}>
-              Importa {selected.size}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setSelected(
+                    selected.size === candidates.length
+                      ? new Set()
+                      : new Set(candidates.map((_, i) => i)),
+                  )
+                }
+              >
+                {selected.size === candidates.length ? "Deseleziona tutti" : "Seleziona tutti"}
+              </Button>
+              <Button size="sm" onClick={saveSelected} disabled={selected.size === 0}>
+                Importa {selected.size}
+              </Button>
+            </div>
           </div>
           {candidates.map((c, i) => (
             <Card key={i} className="flex items-center gap-3 p-3">
