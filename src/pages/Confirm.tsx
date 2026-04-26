@@ -24,6 +24,7 @@ const CATEGORIES = [
   "snack",
   "cereali",
   "pizza",
+  "bevande",
   "altro",
 ];
 
@@ -31,6 +32,7 @@ interface Ingredient {
   name: string;
   category: string;
   description?: string;
+  search_keywords?: string[];
 }
 
 export default function Confirm() {
@@ -59,9 +61,10 @@ export default function Confirm() {
 
   function addIngredient() {
     if (!newName.trim()) return;
+    const n = newName.trim();
     setIngredients((arr) => [
       ...arr,
-      { name: newName.trim(), category: newCat },
+      { name: n, category: newCat, search_keywords: [n.toLowerCase()] },
     ]);
     setNewName("");
   }
