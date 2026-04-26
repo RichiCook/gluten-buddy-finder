@@ -207,13 +207,25 @@ function ImportFromUrl() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [defaultCategory, setDefaultCategory] = useState("altro");
 
+  function normalizeInputUrl(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) return trimmed;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (/^\/\//.test(trimmed)) return `https:${trimmed}`;
+    if (/^tps?:\/\//i.test(trimmed)) return `ht${trimmed}`;
+    if (/^ttps?:\/\//i.test(trimmed)) return `h${trimmed}`;
+    return `https://${trimmed.replace(/^\/+/, "")}`;
+  }
+
   async function fetchSingle() {
     setLoading(true); setSingle(null);
     try {
-      const { data, error } = await supabase.functions.invoke("extract-product-url", { body: { url } });
+      const normalizedUrl = normalizeInputUrl(url);
+      const { data, error } = await supabase.functions.invoke("extract-product-url", { body: { url: normalizedUrl } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setSingle(data);
+      setUrl(normalizedUrl);
     } catch (e: any) {
       toast.error(e?.message || "Errore");
     } finally {
@@ -224,10 +236,12 @@ function ImportFromUrl() {
   async function fetchList() {
     setLoading(true); setCandidates([]); setSelected(new Set());
     try {
-      const { data, error } = await supabase.functions.invoke("extract-product-list", { body: { url } });
+      const normalizedUrl = normalizeInputUrl(url);
+      const { data, error } = await supabase.functions.invoke("extract-product-list", { body: { url: normalizedUrl } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setCandidates(data?.candidates || []);
+      setUrl(normalizedUrl);
       if (!data?.candidates?.length) toast.info("Nessun candidato trovato");
     } catch (e: any) {
       toast.error(e?.message || "Errore");
