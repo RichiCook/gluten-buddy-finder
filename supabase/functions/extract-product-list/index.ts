@@ -130,36 +130,44 @@ function extractAjaxState(html: string) {
 }
 
 function extractPaginationUrls(html: string, baseUrl: URL): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const push = (href: string) => {
-    const cleaned = decodeHtml(href).trim();
-    if (!cleaned || cleaned.startsWith("#")) return;
-    try {
-      const abs = new URL(cleaned, baseUrl).toString();
-      const u = new URL(abs);
-      if (u.host !== baseUrl.host) return;
-      if (!/\/page\/\d+\//i.test(u.pathname)) return;
-      if (seen.has(abs)) return;
-      seen.add(abs);
-      out.push(abs);
-    } catch {
-      // ignore invalid urls
-    }
-  };
+  // Find the highest page number referenced in the HTML pagination block
+  // (WordPress/WooCommerce typically renders only 1, 2, 3, …, N)
+  let maxPage = 1;
+  let templateUrl: string | null = null;
+  let templatePageNum = 0;
 
-  for (const m of html.matchAll(/<link[^>]+rel=["']next["'][^>]+href=["']([^"']+)["']/gi)) {
-    push(m[1]);
-  }
   for (const m of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)) {
-    push(m[1]);
+    const rawHref = decodeHtml(m[1]).trim();
+    if (!rawHref) continue;
+    let abs: string;
+    try {
+      abs = new URL(rawHref, baseUrl).toString();
+    } catch {
+      continue;
+    }
+    const u = new URL(abs);
+    if (u.host !== baseUrl.host) continue;
+    const pageMatch = u.pathname.match(/\/page\/(\d+)\/?$/i) ||
+      u.pathname.match(/\/page\/(\d+)\//i);
+    if (!pageMatch) continue;
+    const pageNum = Number(pageMatch[1]);
+    if (!pageNum) continue;
+    if (pageNum > maxPage) maxPage = pageNum;
+    if (pageNum >= templatePageNum) {
+      templatePageNum = pageNum;
+      templateUrl = abs;
+    }
   }
 
-  return out.sort((a, b) => {
-    const pa = Number((a.match(/\/page\/(\d+)\//i)?.[1]) || 1);
-    const pb = Number((b.match(/\/page\/(\d+)\//i)?.[1]) || 1);
-    return pa - pb;
-  });
+  if (maxPage <= 1 || !templateUrl) return [];
+
+  // Build URLs for every page from 2 to maxPage by replacing the page number in the template
+  const urls: string[] = [];
+  for (let i = 2; i <= maxPage; i++) {
+    const next = templateUrl.replace(/\/page\/\d+\//i, `/page/${i}/`);
+    urls.push(next);
+  }
+  return urls;
 }
 serve(async (req) => {
   if (req.method === "OPTIONS") {
