@@ -168,9 +168,8 @@ serve(async (req) => {
     if (ajax && ajax.allIds.length > cards.length && cards.length > 0) {
       const moreUrl = new URL("/products/more_product", baseUrl).toString();
       const uniqueAll = Array.from(new Set(ajax.allIds));
-      let loaded = ajax.loadedIds.length > 0
-        ? ajax.loadedIds
-        : uniqueAll.slice(0, cards.length);
+      // Use first N unique ids as the "already loaded" baseline (matches what the site rendered)
+      let loaded: string[] = uniqueAll.slice(0, cards.length);
       let safety = 0;
       while (
         loaded.length < uniqueAll.length &&
