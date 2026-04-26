@@ -21,6 +21,16 @@ function decodeHtml(s: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
+function normalizeInputUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^\/\//.test(trimmed)) return `https:${trimmed}`;
+  if (/^tps?:\/\//i.test(trimmed)) return `ht${trimmed}`;
+  if (/^ttps?:\/\//i.test(trimmed)) return `h${trimmed}`;
+  return `https://${trimmed.replace(/^\/+/, "")}`;
+}
+
 // Extract product cards from common e-commerce listing markup (Magento, WooCommerce, Shopify, generic)
 function extractProductCards(
   html: string,
