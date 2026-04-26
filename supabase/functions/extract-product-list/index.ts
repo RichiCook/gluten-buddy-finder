@@ -129,7 +129,38 @@ function extractAjaxState(html: string) {
   return { allIds, tipo };
 }
 
-serve(async (req) => {
+function extractPaginationUrls(html: string, baseUrl: URL): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (href: string) => {
+    const cleaned = decodeHtml(href).trim();
+    if (!cleaned || cleaned.startsWith("#")) return;
+    try {
+      const abs = new URL(cleaned, baseUrl).toString();
+      const u = new URL(abs);
+      if (u.host !== baseUrl.host) return;
+      if (!/\/page\/\d+\//i.test(u.pathname)) return;
+      if (seen.has(abs)) return;
+      seen.add(abs);
+      out.push(abs);
+    } catch {
+      // ignore invalid urls
+    }
+  };
+
+  for (const m of html.matchAll(/<link[^>]+rel=["']next["'][^>]+href=["']([^"']+)["']/gi)) {
+    push(m[1]);
+  }
+  for (const m of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)) {
+    push(m[1]);
+  }
+
+  return out.sort((a, b) => {
+    const pa = Number((a.match(/\/page\/(\d+)\//i)?.[1]) || 1);
+    const pb = Number((b.match(/\/page\/(\d+)\//i)?.[1]) || 1);
+    return pa - pb;
+  });
+}
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
