@@ -335,9 +335,11 @@ function ImportFromUrl() {
 
       {candidates.length > 0 && (
         <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold">{candidates.length} candidati</p>
-            <div className="flex gap-2">
+          <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <p className="text-sm font-semibold">
+              {candidates.length} candidati · {selected.size} selezionati
+            </p>
+            <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 variant="outline"
