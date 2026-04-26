@@ -12,6 +12,7 @@ const UA =
 function decodeHtml(s: string): string {
   return s
     .replace(/&amp;/g, "&")
+    .replace(/&#038;/g, "&")
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
     .replace(/&#39;/g, "'")
@@ -128,6 +129,38 @@ function extractAjaxState(html: string) {
   return { allIds, tipo };
 }
 
+function extractPaginationUrls(html: string, baseUrl: URL): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (href: string) => {
+    const cleaned = decodeHtml(href).trim();
+    if (!cleaned || cleaned.startsWith("#")) return;
+    try {
+      const abs = new URL(cleaned, baseUrl).toString();
+      const u = new URL(abs);
+      if (u.host !== baseUrl.host) return;
+      if (!/\/page\/\d+\//i.test(u.pathname)) return;
+      if (seen.has(abs)) return;
+      seen.add(abs);
+      out.push(abs);
+    } catch {
+      // ignore invalid urls
+    }
+  };
+
+  for (const m of html.matchAll(/<link[^>]+rel=["']next["'][^>]+href=["']([^"']+)["']/gi)) {
+    push(m[1]);
+  }
+  for (const m of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)) {
+    push(m[1]);
+  }
+
+  return out.sort((a, b) => {
+    const pa = Number((a.match(/\/page\/(\d+)\//i)?.[1]) || 1);
+    const pb = Number((b.match(/\/page\/(\d+)\//i)?.[1]) || 1);
+    return pa - pb;
+  });
+}
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -145,7 +178,6 @@ serve(async (req) => {
     const normalized = normalizeInputUrl(url);
     const baseUrl = new URL(normalized);
 
-    // Initial fetch (capture cookies for session-based pagination)
     const resp = await fetch(normalized, {
       headers: {
         "User-Agent": UA,
@@ -156,7 +188,6 @@ serve(async (req) => {
     if (!resp.ok) throw new Error(`Fetch fallito: ${resp.status}`);
     const html = await resp.text();
 
-    // Capture cookies returned by the server for subsequent AJAX calls
     const setCookie = resp.headers.get("set-cookie") || "";
     const cookieHeader = setCookie
       .split(/,(?=[^;]+=[^;]+)/)
@@ -167,13 +198,9 @@ serve(async (req) => {
     const cards: Card[] = extractCards(html, baseUrl);
     const ajax = extractAjaxState(html);
 
-    // If the site uses the /products/more_product AJAX (farmacieglutenfree pattern), keep loading
     if (ajax && ajax.allIds.length > cards.length && cards.length > 0) {
       const moreUrl = new URL("/products/more_product", baseUrl).toString();
       const uniqueAll = Array.from(new Set(ajax.allIds));
-      // The site renders 40 cards, but allIds typically has duplicate entries per product.
-      // The backend filters by `id NOT IN loaded_ids`, so we feed back the unique ids it has shown.
-      // Start by assuming the first `cards.length` UNIQUE ids are loaded.
       let loaded: string[] = uniqueAll.slice(0, cards.length);
       let safety = 0;
       console.log(`[extract-product-list] starting AJAX pagination: cards=${cards.length}, total unique=${uniqueAll.length}, tipo="${ajax.tipo}"`);
@@ -215,7 +242,7 @@ serve(async (req) => {
             cards.push(c);
           }
         }
-        // pull ids from the chunk: block-product data-value='[...]' is an array of ids returned in this batch
+
         const newIds = new Set<string>();
         const blockArr = chunk.match(/class=["']d-none block-product["'][^>]*data-value='(\[[^']*\])'/) ||
           chunk.match(/data-value='(\[[^']*\])'[^>]*class=["']d-none block-product["']/);
@@ -225,7 +252,6 @@ serve(async (req) => {
             for (const id of arr) newIds.add(String(id));
           } catch { /* ignore */ }
         }
-        // fallback: single numeric ids
         for (const bp of chunk.matchAll(/data-value=['"](\d+)['"]/g)) {
           newIds.add(bp[1]);
         }
@@ -233,13 +259,40 @@ serve(async (req) => {
         console.log(`[extract-product-list] iter ${safety}: chunkBytes=${chunk.length} newCards=${cards.length - beforeCount} newIds=${addedIds.length} loadedTotal=${loaded.length + addedIds.length}/${uniqueAll.length}`);
 
         if (addedIds.length === 0 && cards.length === beforeCount) {
-          // No progress — advance loaded by next 40 unique ids and retry once before giving up
           const nextSlice = uniqueAll.slice(loaded.length, loaded.length + 40);
           if (nextSlice.length === 0) break;
           loaded = loaded.concat(nextSlice);
           continue;
         }
         loaded = loaded.concat(addedIds);
+      }
+    } else {
+      const paginationUrls = extractPaginationUrls(html, baseUrl);
+      if (paginationUrls.length) {
+        console.log(`[extract-product-list] following classic pagination: pages=${paginationUrls.length}`);
+      }
+      for (const pageUrl of paginationUrls) {
+        if (cards.length >= max) break;
+        try {
+          const pageResp = await fetch(pageUrl, {
+            headers: {
+              "User-Agent": UA,
+              Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+              Cookie: cookieHeader,
+            },
+          });
+          if (!pageResp.ok) continue;
+          const pageHtml = await pageResp.text();
+          const pageCards = extractCards(pageHtml, baseUrl);
+          for (const c of pageCards) {
+            if (!cards.find((x) => x.source_url === c.source_url)) {
+              cards.push(c);
+            }
+          }
+        } catch (error) {
+          console.warn(`[extract-product-list] pagination fetch failed for ${pageUrl}:`, error);
+        }
       }
     }
 
@@ -249,7 +302,7 @@ serve(async (req) => {
       JSON.stringify({
         candidates,
         total_links: candidates.length,
-        total_available: ajax?.allIds ? Array.from(new Set(ajax.allIds)).length : candidates.length,
+        total_available: ajax?.allIds ? Array.from(new Set(ajax.allIds)).length : cards.length,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
