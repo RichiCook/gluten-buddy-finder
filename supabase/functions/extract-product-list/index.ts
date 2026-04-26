@@ -215,8 +215,17 @@ serve(async (req) => {
             cards.push(c);
           }
         }
-        // pull ids actually returned in this chunk
+        // pull ids from the chunk: block-product data-value='[...]' is an array of ids returned in this batch
         const newIds = new Set<string>();
+        const blockArr = chunk.match(/class=["']d-none block-product["'][^>]*data-value='(\[[^']*\])'/) ||
+          chunk.match(/data-value='(\[[^']*\])'[^>]*class=["']d-none block-product["']/);
+        if (blockArr) {
+          try {
+            const arr = JSON.parse(blockArr[1]);
+            for (const id of arr) newIds.add(String(id));
+          } catch { /* ignore */ }
+        }
+        // fallback: single numeric ids
         for (const bp of chunk.matchAll(/data-value=['"](\d+)['"]/g)) {
           newIds.add(bp[1]);
         }
