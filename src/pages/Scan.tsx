@@ -18,7 +18,9 @@ export default function Scan() {
     if (!file) return;
     setLoading(true);
     try {
-      const dataUrl = await fileToDataUrl(file);
+      // Comprimi e ridimensiona la foto: evita superare la quota di sessionStorage
+      // e riduce i tempi di upload all'AI.
+      const dataUrl = await fileToCompressedDataUrl(file, 1280, 0.82);
       setPreview(dataUrl);
 
       const { data, error } = await supabase.functions.invoke("recognize-image", {
@@ -27,11 +29,18 @@ export default function Scan() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      // Pass result via sessionStorage to confirm page
-      sessionStorage.setItem(
-        "gb_scan",
-        JSON.stringify({ image: dataUrl, result: data }),
-      );
+      // Salva in sessionStorage; se ancora troppo grande, fai fallback senza immagine
+      try {
+        sessionStorage.setItem(
+          "gb_scan",
+          JSON.stringify({ image: dataUrl, result: data }),
+        );
+      } catch {
+        sessionStorage.setItem(
+          "gb_scan",
+          JSON.stringify({ image: null, result: data }),
+        );
+      }
       navigate("/confirm");
     } catch (e: any) {
       console.error(e);
@@ -133,5 +142,38 @@ function fileToDataUrl(file: File): Promise<string> {
     r.onload = () => res(r.result as string);
     r.onerror = rej;
     r.readAsDataURL(file);
+  });
+}
+
+// Ridimensiona la foto al lato massimo indicato e la converte in JPEG compresso.
+async function fileToCompressedDataUrl(
+  file: File,
+  maxSize = 1280,
+  quality = 0.82,
+): Promise<string> {
+  const dataUrl = await fileToDataUrl(file);
+  try {
+    const img = await loadImage(dataUrl);
+    const ratio = Math.min(1, maxSize / Math.max(img.width, img.height));
+    const w = Math.round(img.width * ratio);
+    const h = Math.round(img.height * ratio);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", quality);
+  } catch {
+    return dataUrl;
+  }
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = src;
   });
 }
