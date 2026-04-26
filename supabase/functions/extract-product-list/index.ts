@@ -171,9 +171,13 @@ serve(async (req) => {
     if (ajax && ajax.allIds.length > cards.length && cards.length > 0) {
       const moreUrl = new URL("/products/more_product", baseUrl).toString();
       const uniqueAll = Array.from(new Set(ajax.allIds));
-      // Use first N unique ids as the "already loaded" baseline (matches what the site rendered)
+      // The site renders 40 cards, but allIds typically has duplicate entries per product.
+      // The backend filters by `id NOT IN loaded_ids`, so we feed back the unique ids it has shown.
+      // Start by assuming the first `cards.length` UNIQUE ids are loaded.
       let loaded: string[] = uniqueAll.slice(0, cards.length);
       let safety = 0;
+      console.log(`[extract-product-list] starting AJAX pagination: cards=${cards.length}, total unique=${uniqueAll.length}, tipo="${ajax.tipo}"`);
+
       while (
         loaded.length < uniqueAll.length &&
         cards.length < max &&
@@ -200,7 +204,7 @@ serve(async (req) => {
           body,
         });
         if (!r.ok) {
-          console.warn("more_product call failed", r.status);
+          console.warn(`[extract-product-list] more_product call ${safety} failed: ${r.status}`);
           break;
         }
         const chunk = await r.text();
@@ -212,15 +216,21 @@ serve(async (req) => {
           }
         }
         // pull ids actually returned in this chunk
-        const newIds: string[] = [];
+        const newIds = new Set<string>();
         for (const bp of chunk.matchAll(/data-value=['"](\d+)['"]/g)) {
-          newIds.push(bp[1]);
+          newIds.add(bp[1]);
         }
-        if (newIds.length === 0 && cards.length === beforeCount) {
-          // No progress — stop to avoid infinite loop
-          break;
+        const addedIds = [...newIds].filter((id) => !loaded.includes(id));
+        console.log(`[extract-product-list] iter ${safety}: chunkBytes=${chunk.length} newCards=${cards.length - beforeCount} newIds=${addedIds.length} loadedTotal=${loaded.length + addedIds.length}/${uniqueAll.length}`);
+
+        if (addedIds.length === 0 && cards.length === beforeCount) {
+          // No progress — advance loaded by next 40 unique ids and retry once before giving up
+          const nextSlice = uniqueAll.slice(loaded.length, loaded.length + 40);
+          if (nextSlice.length === 0) break;
+          loaded = loaded.concat(nextSlice);
+          continue;
         }
-        loaded = loaded.concat(newIds);
+        loaded = loaded.concat(addedIds);
       }
     }
 
