@@ -35,17 +35,45 @@ interface Product {
 }
 
 export default function Admin() {
-  const { isAdmin, loading } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [canAccess, setCanAccess] = useState(false);
+  const [accessLoading, setAccessLoading] = useState(true);
 
   useEffect(() => {
-    if (!loading && !isAdmin) {
-      toast.error("Accesso solo per admin");
-      navigate("/");
-    }
-  }, [isAdmin, loading, navigate]);
+    async function verifyAdminAccess() {
+      if (loading) return;
 
-  if (loading || !isAdmin) {
+      if (!user) {
+        setCanAccess(false);
+        setAccessLoading(false);
+        navigate("/auth");
+        return;
+      }
+
+      setAccessLoading(true);
+
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+
+      const allowed = !!data;
+      setCanAccess(allowed);
+      setAccessLoading(false);
+
+      if (!allowed) {
+        toast.error("Accesso solo per admin");
+        navigate("/");
+      }
+    }
+
+    void verifyAdminAccess();
+  }, [user, loading, navigate]);
+
+  if (loading || accessLoading || !canAccess) {
     return (
       <AppLayout title="Admin">
         <p className="text-center text-muted-foreground">Caricamento…</p>
