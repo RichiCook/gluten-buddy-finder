@@ -7,15 +7,22 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM_PROMPT = `Sei un assistente esperto di cibo italiano. Analizzi l'immagine di un prodotto alimentare o di un piatto e identifichi gli ingredienti che TIPICAMENTE contengono glutine (pasta, pane, biscotti, farina di grano, pizza, cracker, couscous, bulgur, orzo, segale, ecc.).
+const SYSTEM_PROMPT = `Sei un assistente esperto di cibo italiano. Analizzi l'immagine di un prodotto alimentare o di un piatto e identifichi tutti gli elementi che TIPICAMENTE contengono glutine.
+
+IMPORTANTE: se l'immagine mostra un PRODOTTO che di per sé contiene glutine (es. una birra, una pasta confezionata, dei biscotti, una pizza, del pane), DEVI inserire il prodotto STESSO come elemento glutinoso (così l'app può cercare alternative senza glutine equivalenti). Esempi:
+- Foto di una birra → gluten_ingredients: [{ name: "birra", category: "bevande", search_keywords: ["birra"] }]
+- Foto di pasta confezionata → gluten_ingredients: [{ name: "pasta di grano", category: "pasta", search_keywords: ["pasta","spaghetti"] }]
+- Foto di un piatto di spaghetti al pomodoro → [{ name: "spaghetti", category: "pasta", search_keywords: ["spaghetti","pasta"] }]
+- Foto di una pizza margherita → [{ name: "pizza", category: "pizza", search_keywords: ["pizza"] }]
 
 Rispondi SEMPRE chiamando lo strumento "report_food" con:
-- dish_name: nome leggibile del piatto/prodotto in italiano (es. "Spaghetti alle vongole", "Biscotti gocciole")
+- dish_name: nome leggibile del piatto/prodotto in italiano (es. "Birra Moretti Ricetta Originale", "Spaghetti alle vongole")
 - kind: "product" se è un prodotto confezionato singolo, "dish" se è un piatto composto
-- gluten_ingredients: array di ingredienti glutinosi presenti, ognuno con:
-   - name: nome breve in italiano (es. "spaghetti", "biscotti", "pane")
-   - category: una di [pasta, biscotti, pane, farina, dolci, snack, cereali, pizza, altro]
-   - description: breve descrizione del tipo (es. "spaghetti di grano duro")
+- gluten_ingredients: array di elementi glutinosi (incluso il prodotto stesso se applicabile), ognuno con:
+   - name: nome breve in italiano (es. "birra", "spaghetti", "biscotti", "pane")
+   - category: una di [pasta, biscotti, pane, farina, dolci, snack, cereali, pizza, bevande, altro]
+   - search_keywords: array di 1-3 parole chiave usate per cercare alternative senza glutine nel database (es. ["birra"], ["spaghetti","pasta"], ["pizza"])
+   - description: breve descrizione opzionale
 
 Se non vedi alcun alimento, restituisci gluten_ingredients vuoto.`;
 
@@ -87,12 +94,17 @@ serve(async (req) => {
                               "snack",
                               "cereali",
                               "pizza",
+                              "bevande",
                               "altro",
                             ],
                           },
+                          search_keywords: {
+                            type: "array",
+                            items: { type: "string" },
+                          },
                           description: { type: "string" },
                         },
-                        required: ["name", "category"],
+                        required: ["name", "category", "search_keywords"],
                         additionalProperties: false,
                       },
                     },
