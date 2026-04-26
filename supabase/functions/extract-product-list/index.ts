@@ -109,8 +109,11 @@ function extractCards(html: string, baseUrl: URL): Card[] {
 /** Extract data attributes from the listing page used for AJAX pagination (farmacieglutenfree-style sites). */
 function extractAjaxState(html: string) {
   // <... id="allProductIds" data-value='[...]'  (data-tipo is optional)
+  // The attribute uses single quotes: data-value='["123","456",...]' — match either quote style
   const idsMatch = html.match(
-    /id=["']allProductIds["'][^>]*?data-value=['"](\[[^'"]*\])['"]/,
+    /id=["']allProductIds["'][^>]*?data-value='(\[[^']*\])'/,
+  ) || html.match(
+    /id=["']allProductIds["'][^>]*?data-value="(\[[^"]*\])"/,
   );
   if (!idsMatch) return null;
   let allIds: string[] = [];
