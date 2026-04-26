@@ -12,6 +12,7 @@ const UA =
 function decodeHtml(s: string): string {
   return s
     .replace(/&amp;/g, "&")
+    .replace(/&#038;/g, "&")
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
     .replace(/&#39;/g, "'")
