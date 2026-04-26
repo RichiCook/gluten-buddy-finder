@@ -106,8 +106,23 @@ function ProductList() {
   const [editing, setEditing] = useState<Product | null>(null);
 
   async function load() {
-    const { data } = await supabase.from("products").select("*").order("created_at", { ascending: false });
-    setItems(data || []);
+    const pageSize = 1000;
+    let from = 0;
+    const all: any[] = [];
+    // Pagina oltre il limite di 1000 righe del client Supabase
+    while (true) {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) break;
+      if (!data || data.length === 0) break;
+      all.push(...data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    setItems(all);
     setLoading(false);
   }
 
