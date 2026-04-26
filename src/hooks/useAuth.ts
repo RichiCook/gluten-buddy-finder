@@ -9,23 +9,30 @@ export function useAuth() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    // Listener FIRST
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
+
       if (s?.user) {
-        // Defer to avoid deadlock
-        setTimeout(() => checkAdmin(s.user.id), 0);
+        setLoading(true);
+        setTimeout(() => {
+          void checkAdmin(s.user.id);
+        }, 0);
       } else {
         setIsAdmin(false);
+        setLoading(false);
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
+    void supabase.auth.getSession().then(async ({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
-      if (s?.user) checkAdmin(s.user.id);
-      setLoading(false);
+
+      if (s?.user) {
+        await checkAdmin(s.user.id);
+      } else {
+        setIsAdmin(false);
+      }
     });
 
     return () => sub.subscription.unsubscribe();
@@ -38,7 +45,9 @@ export function useAuth() {
       .eq("user_id", userId)
       .eq("role", "admin")
       .maybeSingle();
+
     setIsAdmin(!!data);
+    setLoading(false);
   }
 
   return { session, user, loading, isAdmin, signOut: () => supabase.auth.signOut() };
