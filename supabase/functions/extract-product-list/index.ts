@@ -6,9 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-function uniq<T>(arr: T[]): T[] {
-  return Array.from(new Set(arr));
-}
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
 function decodeHtml(s: string): string {
   return s
@@ -21,6 +20,10 @@ function decodeHtml(s: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
+function stripTags(s: string): string {
+  return decodeHtml(s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+}
+
 function normalizeInputUrl(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return trimmed;
@@ -31,63 +34,18 @@ function normalizeInputUrl(input: string): string {
   return `https://${trimmed.replace(/^\/+/, "")}`;
 }
 
-// Extract product cards from common e-commerce listing markup (Magento, WooCommerce, Shopify, generic)
-function extractProductCards(
-  html: string,
-  baseUrl: URL,
-): { name: string; image: string | null; source_url: string }[] {
-  const results: { name: string; image: string | null; source_url: string }[] =
-    [];
+type Card = { name: string; image: string | null; source_url: string };
+
+/**
+ * Extract product cards by scanning anchors paired with the next image inside.
+ * Works generically: looks for <a href="..."> ... <img src="..."> ... </a>
+ * and falls back to the original card-extraction heuristics.
+ */
+function extractCards(html: string, baseUrl: URL): Card[] {
+  const out: Card[] = [];
   const seen = new Set<string>();
 
-  // Pattern 1: Magento "product-item-link" anchors (used by farmacieglutenfree.it)
-  const magentoRe =
-    /<a[^>]+class=["'][^"']*product-item-link[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  for (const m of html.matchAll(magentoRe)) {
-    pushCard(m[1], stripTags(m[2]));
-  }
-  // also reversed attribute order
-  const magentoRe2 =
-    /<a[^>]+href=["']([^"']+)["'][^>]+class=["'][^"']*product-item-link[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
-  for (const m of html.matchAll(magentoRe2)) {
-    pushCard(m[1], stripTags(m[2]));
-  }
-
-  // Pattern 2: WooCommerce "woocommerce-LoopProduct-link"
-  const wooRe =
-    /<a[^>]+class=["'][^"']*woocommerce-LoopProduct-link[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  for (const m of html.matchAll(wooRe)) {
-    const inner = m[2];
-    const title = inner.match(
-      /<h2[^>]*class=["'][^"']*woocommerce-loop-product__title[^"']*["'][^>]*>([\s\S]*?)<\/h2>/i,
-    )?.[1] || stripTags(inner);
-    const img = inner.match(/<img[^>]+(?:data-src|src)=["']([^"']+)["']/i)?.[1] ||
-      null;
-    pushCard(m[1], stripTags(title), img);
-  }
-
-  // Pattern 3: Generic product-item containers with image inside
-  const itemRe =
-    /<(?:li|div|article)[^>]+class=["'][^"']*(?:product-item|product-card|product\b)[^"']*["'][\s\S]*?<\/(?:li|div|article)>/gi;
-  for (const block of html.match(itemRe) || []) {
-    const link = block.match(/<a[^>]+href=["']([^"']+)["']/i)?.[1];
-    if (!link) continue;
-    const title = block.match(
-      /<a[^>]+class=["'][^"']*product-item-link[^"']*["'][^>]*>([\s\S]*?)<\/a>/i,
-    )?.[1] ||
-      block.match(/<h\d[^>]*>([\s\S]*?)<\/h\d>/i)?.[1] ||
-      block.match(/alt=["']([^"']+)["']/i)?.[1];
-    const img = block.match(
-      /<img[^>]+(?:data-src|data-original|src)=["']([^"']+)["']/i,
-    )?.[1] || null;
-    if (title) pushCard(link, stripTags(title), img);
-  }
-
-  function stripTags(s: string): string {
-    return decodeHtml(s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
-  }
-
-  function pushCard(href: string, name: string, image: string | null = null) {
+  function push(href: string, name: string, image: string | null) {
     if (!name || name.length < 2) return;
     let abs: string;
     try {
@@ -97,9 +55,8 @@ function extractProductCards(
     }
     const u = new URL(abs);
     if (u.host !== baseUrl.host) return;
-    // skip non-product paths
     if (
-      /\/(cart|checkout|wishlist|account|login|register|content|orders|customer|search)/i
+      /\/(cart|checkout|wishlist|account|login|register|content|orders|customer|search|brands|categories?|tags?)\b/i
         .test(u.pathname)
     ) return;
     if (u.pathname === baseUrl.pathname || u.pathname === "/") return;
@@ -111,10 +68,72 @@ function extractProductCards(
         absImg = new URL(image, baseUrl).toString();
       } catch { /* ignore */ }
     }
-    results.push({ name, image: absImg, source_url: abs });
+    out.push({ name, image: absImg, source_url: abs });
   }
 
-  return results;
+  // Generic: anchor that wraps (or is followed by) an <img> with name in alt or in a title element
+  const anchorImgRe =
+    /<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]{0,1500}?)<\/a>/gi;
+  for (const m of html.matchAll(anchorImgRe)) {
+    const href = m[1];
+    const inner = m[2];
+    const imgMatch = inner.match(
+      /<img[^>]+(?:data-src|data-original|data-lazy|src)=["']([^"']+\.(?:jpe?g|png|webp|gif)[^"']*)["'][^>]*(?:alt=["']([^"']*)["'])?/i,
+    );
+    if (!imgMatch) continue;
+    const image = imgMatch[1];
+    // Skip obvious non-product images
+    if (/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon)/i.test(image)) continue;
+
+    const altName = imgMatch[2];
+    const titleMatch = inner.match(/<(?:h\d|p|span|div)[^>]*>([\s\S]*?)<\/(?:h\d|p|span|div)>/i);
+    const name = stripTags(altName || titleMatch?.[1] || "");
+    push(href, name, image);
+  }
+
+  // Magento-specific fallback for the anchor without the wrapped image (image is sibling)
+  const magentoRe =
+    /<a[^>]+class=["'][^"']*product-item-link[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (const m of html.matchAll(magentoRe)) {
+    push(m[1], stripTags(m[2]), null);
+  }
+
+  return out;
+}
+
+/** Extract data attributes from the listing page used for AJAX pagination (farmacieglutenfree-style sites). */
+function extractAjaxState(html: string) {
+  // <... id="allProductIds" data-value='[...]' data-tipo='...' ...>
+  const m = html.match(
+    /id=["']allProductIds["'][^>]*data-value=['"](\[[^'"]*\])['"][^>]*data-tipo=['"]([^'"]*)['"]/,
+  ) ||
+    html.match(
+      /data-tipo=['"]([^'"]*)['"][^>]*id=["']allProductIds["'][^>]*data-value=['"](\[[^'"]*\])['"]/,
+    );
+  if (!m) return null;
+  let idsRaw: string, tipo: string;
+  if (m.length === 3 && m[1].startsWith("[")) {
+    idsRaw = m[1];
+    tipo = m[2];
+  } else {
+    tipo = m[1];
+    idsRaw = m[2];
+  }
+  let allIds: string[] = [];
+  try {
+    allIds = JSON.parse(idsRaw);
+  } catch {
+    return null;
+  }
+  // already-rendered ids
+  const loadedIds: string[] = [];
+  for (const bp of html.matchAll(/class=["'][^"']*block-product[^"']*["'][^>]*data-value=['"](\d+)['"]/g)) {
+    loadedIds.push(bp[1]);
+  }
+  for (const bp of html.matchAll(/data-value=['"](\d+)['"][^>]*class=["'][^"']*block-product[^"']*["']/g)) {
+    loadedIds.push(bp[1]);
+  }
+  return { allIds, loadedIds, tipo };
 }
 
 serve(async (req) => {
@@ -123,7 +142,7 @@ serve(async (req) => {
   }
 
   try {
-    const { url, max = 100 } = await req.json();
+    const { url, max = 1000 } = await req.json();
     if (!url) {
       return new Response(JSON.stringify({ error: "url mancante" }), {
         status: 400,
@@ -134,55 +153,94 @@ serve(async (req) => {
     const normalized = normalizeInputUrl(url);
     const baseUrl = new URL(normalized);
 
+    // Initial fetch (capture cookies for session-based pagination)
     const resp = await fetch(normalized, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": UA,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
       },
     });
     if (!resp.ok) throw new Error(`Fetch fallito: ${resp.status}`);
     const html = await resp.text();
 
-    const cards = extractProductCards(html, baseUrl);
+    // Capture cookies returned by the server for subsequent AJAX calls
+    const setCookie = resp.headers.get("set-cookie") || "";
+    const cookieHeader = setCookie
+      .split(/,(?=[^;]+=[^;]+)/)
+      .map((c) => c.split(";")[0].trim())
+      .filter(Boolean)
+      .join("; ");
 
-    // Fallback: if no cards found via specific patterns, do generic same-host links
-    let finalCards = cards;
-    if (cards.length === 0) {
-      const links = uniq(
-        [...html.matchAll(/<a[^>]+href=["']([^"']+)["']/gi)]
-          .map((m) => m[1])
-          .filter((h) =>
-            h && !h.startsWith("#") && !h.startsWith("javascript:")
-          )
-          .map((h) => {
-            try {
-              return new URL(h, baseUrl).toString();
-            } catch {
-              return null;
-            }
-          })
-          .filter((u): u is string => !!u),
-      );
-      finalCards = links
-        .filter((u) => {
-          const x = new URL(u);
-          if (x.host !== baseUrl.host) return false;
-          if (
-            /\/(cart|checkout|wishlist|account|login|register|content|orders|customer|search)/i
-              .test(x.pathname)
-          ) return false;
-          return x.pathname !== baseUrl.pathname && x.pathname !== "/";
-        })
-        .map((u) => ({ name: new URL(u).pathname.split("/").pop() || u, image: null, source_url: u }));
+    const cards: Card[] = extractCards(html, baseUrl);
+    const ajax = extractAjaxState(html);
+
+    // If the site uses the /products/more_product AJAX (farmacieglutenfree pattern), keep loading
+    if (ajax && ajax.allIds.length > cards.length && cards.length > 0) {
+      const moreUrl = new URL("/products/more_product", baseUrl).toString();
+      const uniqueAll = Array.from(new Set(ajax.allIds));
+      let loaded = ajax.loadedIds.length > 0
+        ? ajax.loadedIds
+        : uniqueAll.slice(0, cards.length);
+      let safety = 0;
+      while (
+        loaded.length < uniqueAll.length &&
+        cards.length < max &&
+        safety < 50
+      ) {
+        safety++;
+        const body = new URLSearchParams({
+          loaded_ids: btoa(JSON.stringify(loaded)),
+          all_ids: btoa(JSON.stringify(ajax.allIds)),
+          order: "",
+          tipo: ajax.tipo,
+        }).toString();
+
+        const r = await fetch(moreUrl, {
+          method: "POST",
+          headers: {
+            "User-Agent": UA,
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded",
+            Referer: normalized,
+            Cookie: cookieHeader,
+            Accept: "*/*",
+          },
+          body,
+        });
+        if (!r.ok) {
+          console.warn("more_product call failed", r.status);
+          break;
+        }
+        const chunk = await r.text();
+        const beforeCount = cards.length;
+        const newCards = extractCards(chunk, baseUrl);
+        for (const c of newCards) {
+          if (!cards.find((x) => x.source_url === c.source_url)) {
+            cards.push(c);
+          }
+        }
+        // pull ids actually returned in this chunk
+        const newIds: string[] = [];
+        for (const bp of chunk.matchAll(/data-value=['"](\d+)['"]/g)) {
+          newIds.push(bp[1]);
+        }
+        if (newIds.length === 0 && cards.length === beforeCount) {
+          // No progress — stop to avoid infinite loop
+          break;
+        }
+        loaded = loaded.concat(newIds);
+      }
     }
 
-    const candidates = finalCards.slice(0, max);
+    const candidates = cards.slice(0, max);
 
     return new Response(
-      JSON.stringify({ candidates, total_links: candidates.length }),
+      JSON.stringify({
+        candidates,
+        total_links: candidates.length,
+        total_available: ajax?.allIds ? Array.from(new Set(ajax.allIds)).length : candidates.length,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
