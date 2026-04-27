@@ -255,9 +255,61 @@ function ImportFromUrl() {
       const { data, error } = await supabase.functions.invoke("extract-product-list", { body: { url: normalizedUrl } });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      setCandidates(data?.candidates || []);
+      let raw: any[] = data?.candidates || [];
+      const initialCount = raw.length;
+
+      // 1) Filtro: solo prodotti senza glutine
+      // Se l'URL è già una ricerca/categoria "senza glutine", manteniamo tutti.
+      const urlIsGlutenFree = /senza[-_+%20\s]*glutine|gluten[-_]?free|sg(\b|[-_/])/i.test(normalizedUrl);
+      const isGlutenFree = (c: any) => {
+        const hay = `${c?.name || ""} ${c?.description || ""}`.toLowerCase();
+        if (/con glutine|contiene glutine/.test(hay)) return false;
+        if (urlIsGlutenFree) return true;
+        return /senza glutine|gluten[\s-]?free|\bsg\b/.test(hay);
+      };
+      const gfFiltered = raw.filter(isGlutenFree);
+      const removedNonGf = initialCount - gfFiltered.length;
+
+      // 2) Dedup contro DB esistente (per product_url o nome)
+      const urls = gfFiltered.map((c) => c.source_url).filter(Boolean);
+      const names = gfFiltered.map((c) => (c.name || "").trim()).filter(Boolean);
+      const existing = new Set<string>();
+      const existingNames = new Set<string>();
+      if (urls.length) {
+        const { data: ex1 } = await supabase
+          .from("products")
+          .select("product_url,name")
+          .in("product_url", urls);
+        ex1?.forEach((r: any) => {
+          if (r.product_url) existing.add(r.product_url);
+          if (r.name) existingNames.add(r.name.toLowerCase().trim());
+        });
+      }
+      if (names.length) {
+        const { data: ex2 } = await supabase
+          .from("products")
+          .select("name")
+          .in("name", names);
+        ex2?.forEach((r: any) => r.name && existingNames.add(r.name.toLowerCase().trim()));
+      }
+      const deduped = gfFiltered.filter(
+        (c) =>
+          !existing.has(c.source_url) &&
+          !existingNames.has((c.name || "").toLowerCase().trim()),
+      );
+      const removedDup = gfFiltered.length - deduped.length;
+
+      setCandidates(deduped);
       setUrl(normalizedUrl);
-      if (!data?.candidates?.length) toast.info("Nessun candidato trovato");
+
+      if (!deduped.length) {
+        toast.info("Nessun nuovo prodotto senza glutine trovato");
+      } else {
+        const parts = [`${deduped.length} candidati`];
+        if (removedNonGf > 0) parts.push(`${removedNonGf} esclusi (non SG)`);
+        if (removedDup > 0) parts.push(`${removedDup} già nel DB`);
+        toast.success(parts.join(" · "));
+      }
     } catch (e: any) {
       toast.error(e?.message || "Errore");
     } finally {
