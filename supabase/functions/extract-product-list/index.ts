@@ -131,10 +131,11 @@ function extractAjaxState(html: string) {
 
 function extractPaginationUrls(html: string, baseUrl: URL): string[] {
   // Find the highest page number referenced in the HTML pagination block
-  // (WordPress/WooCommerce typically renders only 1, 2, 3, …, N)
+  // Supports WordPress/WooCommerce (/page/N/) and Magento (?p=N).
   let maxPage = 1;
   let templateUrl: string | null = null;
   let templatePageNum = 0;
+  let style: "path" | "query" = "path";
 
   for (const m of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)) {
     const rawHref = decodeHtml(m[1]).trim();
@@ -147,25 +148,52 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
     }
     const u = new URL(abs);
     if (u.host !== baseUrl.host) continue;
-    const pageMatch = u.pathname.match(/\/page\/(\d+)\/?$/i) ||
+
+    const pathMatch = u.pathname.match(/\/page\/(\d+)\/?$/i) ||
       u.pathname.match(/\/page\/(\d+)\//i);
-    if (!pageMatch) continue;
-    const pageNum = Number(pageMatch[1]);
+    const queryP = u.searchParams.get("p");
+    let pageNum = 0;
+    let curStyle: "path" | "query" = "path";
+    if (pathMatch) {
+      pageNum = Number(pathMatch[1]);
+      curStyle = "path";
+    } else if (queryP && /^\d+$/.test(queryP)) {
+      pageNum = Number(queryP);
+      curStyle = "query";
+    }
     if (!pageNum) continue;
     if (pageNum > maxPage) maxPage = pageNum;
     if (pageNum >= templatePageNum) {
       templatePageNum = pageNum;
       templateUrl = abs;
+      style = curStyle;
     }
   }
 
   if (maxPage <= 1 || !templateUrl) return [];
 
-  // Build URLs for every page from 2 to maxPage by replacing the page number in the template
   const urls: string[] = [];
   for (let i = 2; i <= maxPage; i++) {
-    const next = templateUrl.replace(/\/page\/\d+\//i, `/page/${i}/`);
+    let next: string;
+    if (style === "path") {
+      next = templateUrl.replace(/\/page\/\d+\//i, `/page/${i}/`);
+    } else {
+      const u = new URL(templateUrl);
+      u.searchParams.set("p", String(i));
+      next = u.toString();
+    }
     urls.push(next);
+  }
+  return urls;
+}
+
+/** Probe ?p=N pages sequentially (for sites like Magento that don't render full pagination links). */
+function buildProbePages(baseUrl: URL, maxProbe = 30): string[] {
+  const urls: string[] = [];
+  for (let i = 2; i <= maxProbe; i++) {
+    const u = new URL(baseUrl.toString());
+    u.searchParams.set("p", String(i));
+    urls.push(u.toString());
   }
   return urls;
 }
@@ -300,6 +328,47 @@ serve(async (req) => {
           }
         } catch (error) {
           console.warn(`[extract-product-list] pagination fetch failed for ${pageUrl}:`, error);
+        }
+      }
+
+      // Probe ?p=N pages until two consecutive pages add no new products.
+      // Useful for Magento-style sites that don't render full pagination links upfront.
+      if (cards.length > 0 && cards.length < max) {
+        const probeUrls = buildProbePages(baseUrl, 50);
+        let consecutiveEmpty = 0;
+        console.log(`[extract-product-list] probing ?p=N pages (start)`);
+        for (const pageUrl of probeUrls) {
+          if (cards.length >= max) break;
+          if (consecutiveEmpty >= 2) break;
+          try {
+            const pageResp = await fetch(pageUrl, {
+              headers: {
+                "User-Agent": UA,
+                Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                Cookie: cookieHeader,
+              },
+            });
+            if (!pageResp.ok) {
+              consecutiveEmpty++;
+              continue;
+            }
+            const pageHtml = await pageResp.text();
+            const pageCards = extractCards(pageHtml, baseUrl);
+            const before = cards.length;
+            for (const c of pageCards) {
+              if (!cards.find((x) => x.source_url === c.source_url)) {
+                cards.push(c);
+              }
+            }
+            const added = cards.length - before;
+            console.log(`[extract-product-list] probe ${pageUrl}: cards+${added} (total ${cards.length})`);
+            if (added === 0) consecutiveEmpty++;
+            else consecutiveEmpty = 0;
+          } catch (error) {
+            console.warn(`[extract-product-list] probe failed for ${pageUrl}:`, error);
+            consecutiveEmpty++;
+          }
         }
       }
     }
