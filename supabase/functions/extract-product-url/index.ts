@@ -15,12 +15,23 @@ function pickMeta(html: string, patterns: RegExp[]): string | null {
 }
 
 function decodeHtml(s: string): string {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
+  if (!s) return s;
+  let out = s
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      try { return String.fromCodePoint(parseInt(hex, 16)); } catch { return _; }
+    })
+    .replace(/&#(\d+);/g, (_, dec) => {
+      try { return String.fromCodePoint(parseInt(dec, 10)); } catch { return _; }
+    });
+  const named: Record<string, string> = {
+    amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " ",
+    ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’",
+    ndash: "–", mdash: "—", hellip: "…",
+    egrave: "è", eacute: "é", agrave: "à", igrave: "ì", ograve: "ò", ugrave: "ù",
+  };
+  out = out.replace(/&([a-zA-Z]+);/g, (m, name) => named[name] ?? m);
+  if (/&(#x?\d+|[a-zA-Z]+);/.test(out) && out !== s) return decodeHtml(out);
+  return out;
 }
 
 function normalizeInputUrl(input: string): string {
