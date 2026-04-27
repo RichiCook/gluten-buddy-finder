@@ -131,10 +131,11 @@ function extractAjaxState(html: string) {
 
 function extractPaginationUrls(html: string, baseUrl: URL): string[] {
   // Find the highest page number referenced in the HTML pagination block
-  // (WordPress/WooCommerce typically renders only 1, 2, 3, …, N)
+  // Supports WordPress/WooCommerce (/page/N/) and Magento (?p=N).
   let maxPage = 1;
   let templateUrl: string | null = null;
   let templatePageNum = 0;
+  let style: "path" | "query" = "path";
 
   for (const m of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)) {
     const rawHref = decodeHtml(m[1]).trim();
@@ -147,25 +148,52 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
     }
     const u = new URL(abs);
     if (u.host !== baseUrl.host) continue;
-    const pageMatch = u.pathname.match(/\/page\/(\d+)\/?$/i) ||
+
+    const pathMatch = u.pathname.match(/\/page\/(\d+)\/?$/i) ||
       u.pathname.match(/\/page\/(\d+)\//i);
-    if (!pageMatch) continue;
-    const pageNum = Number(pageMatch[1]);
+    const queryP = u.searchParams.get("p");
+    let pageNum = 0;
+    let curStyle: "path" | "query" = "path";
+    if (pathMatch) {
+      pageNum = Number(pathMatch[1]);
+      curStyle = "path";
+    } else if (queryP && /^\d+$/.test(queryP)) {
+      pageNum = Number(queryP);
+      curStyle = "query";
+    }
     if (!pageNum) continue;
     if (pageNum > maxPage) maxPage = pageNum;
     if (pageNum >= templatePageNum) {
       templatePageNum = pageNum;
       templateUrl = abs;
+      style = curStyle;
     }
   }
 
   if (maxPage <= 1 || !templateUrl) return [];
 
-  // Build URLs for every page from 2 to maxPage by replacing the page number in the template
   const urls: string[] = [];
   for (let i = 2; i <= maxPage; i++) {
-    const next = templateUrl.replace(/\/page\/\d+\//i, `/page/${i}/`);
+    let next: string;
+    if (style === "path") {
+      next = templateUrl.replace(/\/page\/\d+\//i, `/page/${i}/`);
+    } else {
+      const u = new URL(templateUrl);
+      u.searchParams.set("p", String(i));
+      next = u.toString();
+    }
     urls.push(next);
+  }
+  return urls;
+}
+
+/** Probe ?p=N pages sequentially (for sites like Magento that don't render full pagination links). */
+function buildProbePages(baseUrl: URL, maxProbe = 30): string[] {
+  const urls: string[] = [];
+  for (let i = 2; i <= maxProbe; i++) {
+    const u = new URL(baseUrl.toString());
+    u.searchParams.set("p", String(i));
+    urls.push(u.toString());
   }
   return urls;
 }
