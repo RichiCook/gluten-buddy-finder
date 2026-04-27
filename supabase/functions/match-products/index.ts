@@ -47,25 +47,27 @@ serve(async (req) => {
 
     const matches = await Promise.all(
       ingredients.map(async (ing) => {
-        // Costruisci le keyword di ricerca: search_keywords + nome + token nome
-        const keywords = new Set<string>();
-        (ing.search_keywords || []).forEach((k) =>
-          k && keywords.add(k.toLowerCase().trim())
-        );
-        keywords.add(ing.name.toLowerCase().trim());
-        ing.name
-          .toLowerCase()
-          .split(/\s+/)
-          .filter((t) => t.length > 2)
-          .forEach((t) => keywords.add(t));
+        // Keyword "principali" = nome ingrediente + search_keywords
+        // Sono quelle che DEVONO matchare nel nome del prodotto
+        const primaryKeywords = new Set<string>();
+        const ingNameLower = ing.name.toLowerCase().trim();
+        primaryKeywords.add(ingNameLower);
+        (ing.search_keywords || []).forEach((k) => {
+          const kk = k?.toLowerCase().trim();
+          if (kk && kk.length > 2) primaryKeywords.add(kk);
+        });
+        // Aggiungi token significativi del nome (es. "pasta all'avena" -> "pasta", "avena")
+        ingNameLower
+          .split(/[\s'']+/)
+          .filter((t) => t.length > 3)
+          .forEach((t) => primaryKeywords.add(t));
 
-        const kwArr = Array.from(keywords).filter(Boolean);
+        const primaryArr = Array.from(primaryKeywords).filter(Boolean);
 
-        // 1) Cerca per keyword nel nome/descrizione/tags (su TUTTI i prodotti)
-        //    Usa OR di ilike per ogni parola chiave
-        const orFilters = kwArr.flatMap((k) => [
+        // 1) Cerca SOLO nel nome/brand prodotto per keyword principali
+        const orFilters = primaryArr.flatMap((k) => [
           `name.ilike.%${k}%`,
-          `description.ilike.%${k}%`,
+          `brand.ilike.%${k}%`,
         ]).join(",");
 
         let candidates: any[] = [];
@@ -75,38 +77,36 @@ serve(async (req) => {
             .from("products")
             .select("*")
             .or(orFilters)
-            .limit(60);
+            .limit(80);
           if (error) console.error("keyword query error", error);
           else candidates = data || [];
         }
 
-        // 2) Se la categoria esiste nel DB e abbiamo pochi risultati, aggiungi per categoria
-        if (candidates.length < 8 && DB_CATEGORIES.has(ing.category)) {
-          const { data: catData } = await supabase
-            .from("products")
-            .select("*")
-            .eq("category", ing.category)
-            .limit(20);
-          (catData || []).forEach((p) => {
-            if (!candidates.find((c) => c.id === p.id)) candidates.push(p);
-          });
-        }
-
-        // Ranking per overlap delle keyword
+        // Ranking: forte priorità al match nel NOME del prodotto
         const ranked = candidates
           .map((p) => {
-            const haystack = `${p.name} ${p.brand || ""} ${
-              p.description || ""
-            } ${(p.ingredient_tags || []).join(" ")}`.toLowerCase();
-            const score = kwArr.reduce(
-              (s, t) => (haystack.includes(t) ? s + 2 : s),
-              0,
-            ) + (DB_CATEGORIES.has(ing.category) && p.category === ing.category
-              ? 1
-              : 0);
+            const nameLower = (p.name || "").toLowerCase();
+            const brandLower = (p.brand || "").toLowerCase();
+            const descLower = (p.description || "").toLowerCase();
+            const tagsLower = (p.ingredient_tags || []).join(" ").toLowerCase();
+
+            let score = 0;
+            for (const kw of primaryArr) {
+              if (nameLower.includes(kw)) score += 10;       // forte
+              else if (brandLower.includes(kw)) score += 4;
+              else if (tagsLower.includes(kw)) score += 3;
+              else if (descLower.includes(kw)) score += 1;
+            }
+            // Bonus se il nome ingrediente intero compare nel nome prodotto
+            if (nameLower.includes(ingNameLower)) score += 6;
+            // Piccolo bonus categoria coerente
+            if (DB_CATEGORIES.has(ing.category) && p.category === ing.category) {
+              score += 2;
+            }
             return { ...p, _score: score };
           })
-          .filter((p) => p._score > 0)
+          // Soglia: scarta match deboli (solo descrizione o solo categoria)
+          .filter((p) => p._score >= 6)
           .sort((a, b) => b._score - a._score)
           .slice(0, 12);
 
