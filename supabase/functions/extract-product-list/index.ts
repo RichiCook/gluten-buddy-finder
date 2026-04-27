@@ -330,6 +330,47 @@ serve(async (req) => {
           console.warn(`[extract-product-list] pagination fetch failed for ${pageUrl}:`, error);
         }
       }
+
+      // Probe ?p=N pages until two consecutive pages add no new products.
+      // Useful for Magento-style sites that don't render full pagination links upfront.
+      if (cards.length > 0 && cards.length < max) {
+        const probeUrls = buildProbePages(baseUrl, 50);
+        let consecutiveEmpty = 0;
+        console.log(`[extract-product-list] probing ?p=N pages (start)`);
+        for (const pageUrl of probeUrls) {
+          if (cards.length >= max) break;
+          if (consecutiveEmpty >= 2) break;
+          try {
+            const pageResp = await fetch(pageUrl, {
+              headers: {
+                "User-Agent": UA,
+                Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                Cookie: cookieHeader,
+              },
+            });
+            if (!pageResp.ok) {
+              consecutiveEmpty++;
+              continue;
+            }
+            const pageHtml = await pageResp.text();
+            const pageCards = extractCards(pageHtml, baseUrl);
+            const before = cards.length;
+            for (const c of pageCards) {
+              if (!cards.find((x) => x.source_url === c.source_url)) {
+                cards.push(c);
+              }
+            }
+            const added = cards.length - before;
+            console.log(`[extract-product-list] probe ${pageUrl}: cards+${added} (total ${cards.length})`);
+            if (added === 0) consecutiveEmpty++;
+            else consecutiveEmpty = 0;
+          } catch (error) {
+            console.warn(`[extract-product-list] probe failed for ${pageUrl}:`, error);
+            consecutiveEmpty++;
+          }
+        }
+      }
     }
 
     const candidates = cards.slice(0, max);
