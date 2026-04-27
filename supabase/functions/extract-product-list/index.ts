@@ -10,15 +10,31 @@ const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
 function decodeHtml(s: string): string {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&#038;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&nbsp;/g, " ");
+  if (!s) return s;
+  let out = s
+    // Numeric hex entities: &#x20; &#xA0;
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      try { return String.fromCodePoint(parseInt(hex, 16)); } catch { return _; }
+    })
+    // Numeric decimal entities: &#32; &#039;
+    .replace(/&#(\d+);/g, (_, dec) => {
+      try { return String.fromCodePoint(parseInt(dec, 10)); } catch { return _; }
+    });
+  // Named entities
+  const named: Record<string, string> = {
+    amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " ",
+    laquo: "«", raquo: "»", iexcl: "¡", iquest: "¿",
+    ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’",
+    ndash: "–", mdash: "—", hellip: "…", trade: "™", copy: "©", reg: "®",
+    egrave: "è", eacute: "é", agrave: "à", igrave: "ì", ograve: "ò", ugrave: "ù",
+    Egrave: "È", Eacute: "É", Agrave: "À", Igrave: "Ì", Ograve: "Ò", Ugrave: "Ù",
+  };
+  out = out.replace(/&([a-zA-Z]+);/g, (m, name) => named[name] ?? m);
+  // Second pass for double-encoded entities (e.g., &amp;#x20;)
+  if (/&(#x?\d+|[a-zA-Z]+);/.test(out) && out !== s) {
+    return decodeHtml(out);
+  }
+  return out;
 }
 
 function stripTags(s: string): string {
