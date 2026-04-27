@@ -259,13 +259,16 @@ function ImportFromUrl() {
       const initialCount = raw.length;
 
       // 1) Filtro: solo prodotti senza glutine
-      // Se l'URL è già una ricerca/categoria "senza glutine", manteniamo tutti.
-      const urlIsGlutenFree = /senza[-_+%20\s]*glutine|gluten[-_]?free|sg(\b|[-_/])/i.test(normalizedUrl);
+      // Verifichiamo SEMPRE ogni singolo prodotto: l'URL della pagina può
+      // essere una ricerca (es. "?q=senza+glutine") che ritorna anche
+      // prodotti correlati con glutine. Non basta fidarsi dell'URL.
       const isGlutenFree = (c: any) => {
-        const hay = `${c?.name || ""} ${c?.description || ""}`.toLowerCase();
+        const hay = `${c?.name || ""} ${c?.description || ""} ${c?.source_url || ""}`.toLowerCase();
+        // Esclusioni esplicite
         if (/con glutine|contiene glutine/.test(hay)) return false;
-        if (urlIsGlutenFree) return true;
-        return /senza glutine|gluten[\s-]?free|\bsg\b/.test(hay);
+        // Marcatori positivi nel testo o nello slug dell'URL prodotto
+        if (/senza[\s\-_]*glutine|gluten[\s\-]?free|\bsg\b|\bs\.g\.\b|-sg-|\/sg\//.test(hay)) return true;
+        return false;
       };
       const gfFiltered = raw.filter(isGlutenFree);
       const removedNonGf = initialCount - gfFiltered.length;
