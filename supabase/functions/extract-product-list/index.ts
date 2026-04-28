@@ -262,6 +262,88 @@ serve(async (req) => {
     const cards: Card[] = extractCards(html, baseUrl);
     const ajax = extractAjaxState(html);
 
+    // PrestaShop detection: pages expose a `from-xhr=1` JSON endpoint that returns
+    // structured products + pagination metadata. Much more reliable than scraping HTML
+    // (and bypasses Cloudflare HTML challenges that can fire on subsequent requests).
+    const isPrestashop = /prestashop/i.test(html) ||
+      /id=["']js-product-list["']/i.test(html) ||
+      /data-controller=["']product["']/i.test(html);
+    let prestashopTotal: number | null = null;
+
+    if (isPrestashop && cards.length > 0 && cards.length < max) {
+      try {
+        const xhrUrlBase = new URL(baseUrl.toString());
+        xhrUrlBase.searchParams.set("from-xhr", "1");
+        // Fetch page 1 via XHR to learn pages_count
+        xhrUrlBase.searchParams.set("page", "1");
+        const r1 = await fetch(xhrUrlBase.toString(), {
+          headers: {
+            "User-Agent": UA,
+            "X-Requested-With": "XMLHttpRequest",
+            Accept: "application/json,text/javascript,*/*;q=0.01",
+            "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+            Referer: normalized,
+            Cookie: cookieHeader,
+          },
+        });
+        if (r1.ok) {
+          const j1 = await r1.json();
+          const pagesCount = Number(j1?.pagination?.pages_count) || 1;
+          prestashopTotal = Number(j1?.pagination?.total_items) || null;
+          console.log(`[extract-product-list] PrestaShop XHR: pages_count=${pagesCount}, total_items=${prestashopTotal}`);
+
+          const ingestProducts = (products: any[]) => {
+            for (const p of products || []) {
+              const href = p?.url || p?.canonical_url || p?.link;
+              const name = p?.name;
+              const image = p?.cover?.large?.url || p?.cover?.medium_default?.url ||
+                p?.cover?.bo_default?.url || p?.cover?.url || null;
+              if (!href || !name) continue;
+              if (cards.find((x) => x.source_url === href)) continue;
+              try {
+                const u = new URL(href, baseUrl);
+                if (u.host !== baseUrl.host) continue;
+              } catch { continue; }
+              cards.push({ name: stripTags(String(name)), image, source_url: href });
+            }
+          };
+          ingestProducts(j1?.products);
+
+          for (let p = 2; p <= pagesCount && cards.length < max; p++) {
+            const u = new URL(baseUrl.toString());
+            u.searchParams.set("from-xhr", "1");
+            u.searchParams.set("page", String(p));
+            try {
+              const rp = await fetch(u.toString(), {
+                headers: {
+                  "User-Agent": UA,
+                  "X-Requested-With": "XMLHttpRequest",
+                  Accept: "application/json,text/javascript,*/*;q=0.01",
+                  "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                  Referer: normalized,
+                  Cookie: cookieHeader,
+                },
+              });
+              if (!rp.ok) {
+                console.warn(`[extract-product-list] PrestaShop XHR page ${p} failed: ${rp.status}`);
+                continue;
+              }
+              const jp = await rp.json();
+              const before = cards.length;
+              ingestProducts(jp?.products);
+              console.log(`[extract-product-list] PrestaShop XHR page ${p}: +${cards.length - before} (total ${cards.length})`);
+            } catch (err) {
+              console.warn(`[extract-product-list] PrestaShop XHR page ${p} error:`, err);
+            }
+          }
+        } else {
+          console.warn(`[extract-product-list] PrestaShop XHR probe failed: ${r1.status}`);
+        }
+      } catch (err) {
+        console.warn("[extract-product-list] PrestaShop XHR path error:", err);
+      }
+    }
+
     if (ajax && ajax.allIds.length > cards.length && cards.length > 0) {
       const moreUrl = new URL("/products/more_product", baseUrl).toString();
       const uniqueAll = Array.from(new Set(ajax.allIds));
