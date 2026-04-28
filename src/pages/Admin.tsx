@@ -241,6 +241,7 @@ function ImportFromUrl() {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [defaultCategory, setDefaultCategory] = useState("altro");
+  const [importSummary, setImportSummary] = useState<{ found: number; nonGf: number; duplicates: number } | null>(null);
 
   function normalizeInputUrl(value: string) {
     const trimmed = value.trim();
@@ -269,7 +270,7 @@ function ImportFromUrl() {
   }
 
   async function fetchList() {
-    setLoading(true); setCandidates([]); setSelected(new Set());
+    setLoading(true); setCandidates([]); setSelected(new Set()); setImportSummary(null);
     try {
       const normalizedUrl = normalizeInputUrl(url);
       const { data, error } = await supabase.functions.invoke("extract-product-list", { body: { url: normalizedUrl } });
@@ -336,6 +337,7 @@ function ImportFromUrl() {
       const removedDup = gfFiltered.length - deduped.length;
 
       setCandidates(deduped);
+      setImportSummary({ found: initialCount, nonGf: removedNonGf, duplicates: removedDup });
       setUrl(normalizedUrl);
 
       if (!deduped.length) {
@@ -436,12 +438,21 @@ function ImportFromUrl() {
         </Card>
       )}
 
-      {candidates.length > 0 && (
+      {(candidates.length > 0 || importSummary) && (
         <div className="space-y-2">
           <div className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-            <p className="text-sm font-semibold">
-              {candidates.length} candidati · {selected.size} selezionati
-            </p>
+            <div>
+              <p className="text-sm font-semibold">
+                {candidates.length} candidati · {selected.size} selezionati
+              </p>
+              {importSummary && (
+                <p className="text-xs text-muted-foreground">
+                  {importSummary.found} trovati sul sito
+                  {importSummary.nonGf > 0 ? ` · ${importSummary.nonGf} esclusi (non SG)` : ""}
+                  {importSummary.duplicates > 0 ? ` · ${importSummary.duplicates} già nel DB` : ""}
+                </p>
+              )}
+            </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
