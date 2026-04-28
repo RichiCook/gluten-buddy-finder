@@ -497,7 +497,7 @@ serve(async (req) => {
       JSON.stringify({
         candidates,
         total_links: candidates.length,
-        total_available: ajax?.allIds ? Array.from(new Set(ajax.allIds)).length : cards.length,
+        total_available: prestashopTotal ?? (ajax?.allIds ? Array.from(new Set(ajax.allIds)).length : cards.length),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
