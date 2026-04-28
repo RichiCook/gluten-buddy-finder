@@ -270,13 +270,20 @@ serve(async (req) => {
       /data-controller=["']product["']/i.test(html);
     let prestashopTotal: number | null = null;
 
+    // Build a clean XHR URL: keep only the category path; strip tracking/UI params
+    // (e.g. resultsPerPage, _gl, gclid, gbraid) which can cause the server to return
+    // HTML instead of JSON or to mis-paginate.
+    const buildXhrUrl = (pageNum: number) => {
+      const u = new URL(baseUrl.pathname, baseUrl.origin);
+      u.searchParams.set("from-xhr", "1");
+      u.searchParams.set("page", String(pageNum));
+      return u.toString();
+    };
+
     if (isPrestashop && cards.length > 0 && cards.length < max) {
       try {
-        const xhrUrlBase = new URL(baseUrl.toString());
-        xhrUrlBase.searchParams.set("from-xhr", "1");
         // Fetch page 1 via XHR to learn pages_count
-        xhrUrlBase.searchParams.set("page", "1");
-        const r1 = await fetch(xhrUrlBase.toString(), {
+        const r1 = await fetch(buildXhrUrl(1), {
           headers: {
             "User-Agent": UA,
             "X-Requested-With": "XMLHttpRequest",
