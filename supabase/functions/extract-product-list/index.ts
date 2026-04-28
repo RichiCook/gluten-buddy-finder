@@ -259,7 +259,7 @@ serve(async (req) => {
       .filter(Boolean)
       .join("; ");
 
-    const cards: Card[] = extractCards(html, baseUrl);
+    let cards: Card[] = extractCards(html, baseUrl);
     const ajax = extractAjaxState(html);
 
     // PrestaShop detection: pages expose a `from-xhr=1` JSON endpoint that returns
@@ -282,6 +282,30 @@ serve(async (req) => {
 
     if (isPrestashop && cards.length < max) {
       try {
+        const xhrCards: Card[] = [];
+        const xhrSeen = new Set<string>();
+
+        const ingestProducts = (products: any[]) => {
+          for (const p of products || []) {
+            const href = p?.url || p?.canonical_url || p?.link;
+            const name = p?.name;
+            const image = p?.cover?.large?.url || p?.cover?.medium_default?.url ||
+              p?.cover?.bo_default?.url || p?.cover?.url || null;
+            if (!href || !name) continue;
+            let abs: string;
+            try {
+              abs = new URL(href, baseUrl).toString();
+            } catch {
+              continue;
+            }
+            const u = new URL(abs);
+            if (u.host !== baseUrl.host) continue;
+            if (xhrSeen.has(abs)) continue;
+            xhrSeen.add(abs);
+            xhrCards.push({ name: stripTags(String(name)), image, source_url: abs });
+          }
+        };
+
         // Fetch page 1 via XHR to learn pages_count
         const r1 = await fetch(buildXhrUrl(1), {
           headers: {
@@ -298,22 +322,6 @@ serve(async (req) => {
           const pagesCount = Number(j1?.pagination?.pages_count) || 1;
           prestashopTotal = Number(j1?.pagination?.total_items) || null;
           console.log(`[extract-product-list] PrestaShop XHR: pages_count=${pagesCount}, total_items=${prestashopTotal}`);
-
-          const ingestProducts = (products: any[]) => {
-            for (const p of products || []) {
-              const href = p?.url || p?.canonical_url || p?.link;
-              const name = p?.name;
-              const image = p?.cover?.large?.url || p?.cover?.medium_default?.url ||
-                p?.cover?.bo_default?.url || p?.cover?.url || null;
-              if (!href || !name) continue;
-              if (cards.find((x) => x.source_url === href)) continue;
-              try {
-                const u = new URL(href, baseUrl);
-                if (u.host !== baseUrl.host) continue;
-              } catch { continue; }
-              cards.push({ name: stripTags(String(name)), image, source_url: href });
-            }
-          };
           ingestProducts(j1?.products);
 
           for (let p = 2; p <= pagesCount && cards.length < max; p++) {
@@ -333,12 +341,17 @@ serve(async (req) => {
                 continue;
               }
               const jp = await rp.json();
-              const before = cards.length;
+              const before = xhrCards.length;
               ingestProducts(jp?.products);
-              console.log(`[extract-product-list] PrestaShop XHR page ${p}: +${cards.length - before} (total ${cards.length})`);
+              console.log(`[extract-product-list] PrestaShop XHR page ${p}: +${xhrCards.length - before} (total ${xhrCards.length})`);
             } catch (err) {
               console.warn(`[extract-product-list] PrestaShop XHR page ${p} error:`, err);
             }
+          }
+
+          if (xhrCards.length > 0) {
+            cards = xhrCards;
+            console.log(`[extract-product-list] using PrestaShop XHR listing only: ${cards.length} cards`);
           }
         } else {
           console.warn(`[extract-product-list] PrestaShop XHR probe failed: ${r1.status}`);
