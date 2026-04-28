@@ -199,6 +199,7 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
 
   if (maxPage <= 1 || !templateUrl) return [];
 
+  const param = (extractPaginationUrls as any)._param ?? "p";
   const urls: string[] = [];
   for (let i = 2; i <= maxPage; i++) {
     let next: string;
@@ -206,7 +207,7 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
       next = templateUrl.replace(/\/page\/\d+\//i, `/page/${i}/`);
     } else {
       const u = new URL(templateUrl);
-      u.searchParams.set("p", String(i));
+      u.searchParams.set(param, String(i));
       next = u.toString();
     }
     urls.push(next);
