@@ -206,12 +206,12 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
   return urls;
 }
 
-/** Probe ?p=N pages sequentially (for sites like Magento that don't render full pagination links). */
-function buildProbePages(baseUrl: URL, maxProbe = 30): string[] {
+/** Probe pagination pages sequentially. Tries common param names: ?page=N (PrestaShop), ?p=N (Magento). */
+function buildProbePages(baseUrl: URL, maxProbe = 30, param: "page" | "p" = "p"): string[] {
   const urls: string[] = [];
   for (let i = 2; i <= maxProbe; i++) {
     const u = new URL(baseUrl.toString());
-    u.searchParams.set("p", String(i));
+    u.searchParams.set(param, String(i));
     urls.push(u.toString());
   }
   return urls;
