@@ -258,9 +258,12 @@ serve(async (req) => {
     const normalized = normalizeInputUrl(url);
     const baseUrl = new URL(normalized);
 
+    const useBotUA = needsBotUA(baseUrl.host);
+    const effectiveUA = useBotUA ? GOOGLEBOT_UA : UA;
+
     const resp = await fetch(normalized, {
       headers: {
-        "User-Agent": UA,
+        "User-Agent": effectiveUA,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
       },
