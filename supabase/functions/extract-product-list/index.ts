@@ -73,10 +73,13 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     const u = new URL(abs);
     if (u.host !== baseUrl.host) return;
     if (
-      /\/(cart|checkout|wishlist|account|login|register|content|orders|customer|search|brands|categories?|tags?)\b/i
+      /\/(cart|checkout|wishlist|account|login|register|content|orders|customer|search|brand|brands|categories?|tags?|manufacturer|cms)\b/i
         .test(u.pathname)
     ) return;
     if (u.pathname === baseUrl.pathname || u.pathname === "/") return;
+    // Skip PrestaShop category-style URLs: /xx/123-some-name (no intermediate path segment)
+    // Real product URLs typically end with .html or have an intermediate segment like /xx/category/123-name.html
+    if (/^\/[a-z]{2}\/\d+-[^/]+\/?$/i.test(u.pathname)) return;
     if (seen.has(abs)) return;
     seen.add(abs);
     let absImg: string | null = null;
@@ -168,14 +171,21 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
     const pathMatch = u.pathname.match(/\/page\/(\d+)\/?$/i) ||
       u.pathname.match(/\/page\/(\d+)\//i);
     const queryP = u.searchParams.get("p");
+    const queryPage = u.searchParams.get("page");
     let pageNum = 0;
     let curStyle: "path" | "query" = "path";
+    let curParam: "p" | "page" = "p";
     if (pathMatch) {
       pageNum = Number(pathMatch[1]);
       curStyle = "path";
+    } else if (queryPage && /^\d+$/.test(queryPage)) {
+      pageNum = Number(queryPage);
+      curStyle = "query";
+      curParam = "page";
     } else if (queryP && /^\d+$/.test(queryP)) {
       pageNum = Number(queryP);
       curStyle = "query";
+      curParam = "p";
     }
     if (!pageNum) continue;
     if (pageNum > maxPage) maxPage = pageNum;
@@ -183,11 +193,13 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
       templatePageNum = pageNum;
       templateUrl = abs;
       style = curStyle;
+      (extractPaginationUrls as any)._param = curParam;
     }
   }
 
   if (maxPage <= 1 || !templateUrl) return [];
 
+  const param = (extractPaginationUrls as any)._param ?? "p";
   const urls: string[] = [];
   for (let i = 2; i <= maxPage; i++) {
     let next: string;
@@ -195,7 +207,7 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
       next = templateUrl.replace(/\/page\/\d+\//i, `/page/${i}/`);
     } else {
       const u = new URL(templateUrl);
-      u.searchParams.set("p", String(i));
+      u.searchParams.set(param, String(i));
       next = u.toString();
     }
     urls.push(next);
@@ -203,12 +215,12 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
   return urls;
 }
 
-/** Probe ?p=N pages sequentially (for sites like Magento that don't render full pagination links). */
-function buildProbePages(baseUrl: URL, maxProbe = 30): string[] {
+/** Probe pagination pages sequentially. Tries common param names: ?page=N (PrestaShop), ?p=N (Magento). */
+function buildProbePages(baseUrl: URL, maxProbe = 30, param: "page" | "p" = "p"): string[] {
   const urls: string[] = [];
   for (let i = 2; i <= maxProbe; i++) {
     const u = new URL(baseUrl.toString());
-    u.searchParams.set("p", String(i));
+    u.searchParams.set(param, String(i));
     urls.push(u.toString());
   }
   return urls;
@@ -347,44 +359,52 @@ serve(async (req) => {
         }
       }
 
-      // Probe ?p=N pages until two consecutive pages add no new products.
-      // Useful for Magento-style sites that don't render full pagination links upfront.
+      // Probe pagination pages until two consecutive pages add no new products.
+      // Try both ?page=N (PrestaShop) and ?p=N (Magento) param styles.
       if (cards.length > 0 && cards.length < max) {
-        const probeUrls = buildProbePages(baseUrl, 50);
-        let consecutiveEmpty = 0;
-        console.log(`[extract-product-list] probing ?p=N pages (start)`);
-        for (const pageUrl of probeUrls) {
+        for (const probeParam of ["page", "p"] as const) {
           if (cards.length >= max) break;
-          if (consecutiveEmpty >= 2) break;
-          try {
-            const pageResp = await fetch(pageUrl, {
-              headers: {
-                "User-Agent": UA,
-                Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
-                Cookie: cookieHeader,
-              },
-            });
-            if (!pageResp.ok) {
-              consecutiveEmpty++;
-              continue;
-            }
-            const pageHtml = await pageResp.text();
-            const pageCards = extractCards(pageHtml, baseUrl);
-            const before = cards.length;
-            for (const c of pageCards) {
-              if (!cards.find((x) => x.source_url === c.source_url)) {
-                cards.push(c);
+          // Skip if base URL already has this param set (avoids re-fetching same page)
+          if (baseUrl.searchParams.has(probeParam)) continue;
+          const probeUrls = buildProbePages(baseUrl, 50, probeParam);
+          let consecutiveEmpty = 0;
+          let firstAdded = false;
+          console.log(`[extract-product-list] probing ?${probeParam}=N pages (start)`);
+          for (const pageUrl of probeUrls) {
+            if (cards.length >= max) break;
+            if (consecutiveEmpty >= 2) break;
+            try {
+              const pageResp = await fetch(pageUrl, {
+                headers: {
+                  "User-Agent": UA,
+                  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                  "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                  Cookie: cookieHeader,
+                },
+              });
+              if (!pageResp.ok) {
+                consecutiveEmpty++;
+                continue;
               }
+              const pageHtml = await pageResp.text();
+              const pageCards = extractCards(pageHtml, baseUrl);
+              const before = cards.length;
+              for (const c of pageCards) {
+                if (!cards.find((x) => x.source_url === c.source_url)) {
+                  cards.push(c);
+                }
+              }
+              const added = cards.length - before;
+              console.log(`[extract-product-list] probe ?${probeParam}=${pageUrl.match(/[?&](?:page|p)=(\d+)/)?.[1]}: cards+${added} (total ${cards.length})`);
+              if (added === 0) consecutiveEmpty++;
+              else { consecutiveEmpty = 0; firstAdded = true; }
+            } catch (error) {
+              console.warn(`[extract-product-list] probe failed for ${pageUrl}:`, error);
+              consecutiveEmpty++;
             }
-            const added = cards.length - before;
-            console.log(`[extract-product-list] probe ${pageUrl}: cards+${added} (total ${cards.length})`);
-            if (added === 0) consecutiveEmpty++;
-            else consecutiveEmpty = 0;
-          } catch (error) {
-            console.warn(`[extract-product-list] probe failed for ${pageUrl}:`, error);
-            consecutiveEmpty++;
           }
+          // If this param style worked (added new products), don't try the other one
+          if (firstAdded) break;
         }
       }
     }
