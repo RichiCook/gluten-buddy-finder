@@ -281,6 +281,105 @@ serve(async (req) => {
     let cards: Card[] = extractCards(html, baseUrl);
     const ajax = extractAjaxState(html);
 
+    // ===== Esselunga (SPA pre-rendered for Googlebot) =====
+    // The page returns up to 30 products. Pagination is `/ricerca/<query>/<n>`.
+    // We detect products by looking for "Prodotto senza glutine" (the wheat-with-slash
+    // icon alt text) and extract canonical PDP links.
+    const isEsselunga = /esselunga\.it$/i.test(baseUrl.host) ||
+      baseUrl.host.endsWith("esselunga.it");
+    if (isEsselunga) {
+      const seen = new Set<string>();
+      const esselungaCards: Card[] = [];
+
+      const parseEsselungaPage = (pageHtml: string) => {
+        // Match each product block: id="..."  ...  /store/prodotto/<id>/<slug>"  ...  src="<img>"  ...  alt="<name>"
+        // The "senza glutine" badge marker.
+        const blockRe =
+          /<div class="product\s+flex-md-row[^"]*"[^>]*>([\s\S]*?)(?=<div class="product\s+flex-md-row|<\/main>|<\/body>)/g;
+        let m: RegExpExecArray | null;
+        while ((m = blockRe.exec(pageHtml)) !== null) {
+          const block = m[1];
+          // Require the gluten-free badge image to be present in this block
+          const isGlutenFree = /senza_glutine\.webp/i.test(block) ||
+            /Prodotto senza glutine/i.test(block);
+          if (!isGlutenFree) continue;
+          const linkM = block.match(
+            /href="(\/commerce\/nav\/supermercato\/store\/prodotto\/\d+\/[^"]+)"/,
+          );
+          if (!linkM) continue;
+          const href = linkM[1];
+          const abs = new URL(href, baseUrl).toString();
+          if (seen.has(abs)) continue;
+          // Image
+          const imgM = block.match(
+            /src="(https:\/\/images\.services\.esselunga\.it\/[^"]+)"/,
+          );
+          // Name from alt of product image (first occurrence) or from URL slug
+          let name = "";
+          const altM = block.match(
+            /<img[^>]+src="https:\/\/images\.services\.esselunga\.it[^"]+"[^>]*alt="([^"]+)"/,
+          );
+          if (altM) name = altM[1];
+          if (!name) {
+            const slug = href.split("/").pop() || "";
+            name = slug.replace(/-/g, " ");
+          }
+          seen.add(abs);
+          esselungaCards.push({
+            name: stripTags(name),
+            image: imgM ? imgM[1] : null,
+            source_url: abs,
+          });
+        }
+      };
+
+      parseEsselungaPage(html);
+
+      // Total declared: "Risultati della ricerca (NNN)"
+      const totalM = html.match(/Risultati della ricerca \((\d+)\)/i);
+      const declaredTotal = totalM ? parseInt(totalM[1], 10) : null;
+
+      // Build paginated URL: append "/<n>" to pathname (replacing existing trailing /<n> if any)
+      const buildEsselungaPage = (n: number) => {
+        const cleanPath = baseUrl.pathname.replace(/\/\d+\/?$/, "");
+        const u = new URL(cleanPath + "/" + n, baseUrl.origin);
+        return u.toString();
+      };
+
+      if (declaredTotal && declaredTotal > esselungaCards.length) {
+        const pages = Math.min(50, Math.ceil(declaredTotal / 30));
+        for (let p = 2; p <= pages && esselungaCards.length < max; p++) {
+          try {
+            const pr = await fetch(buildEsselungaPage(p), {
+              headers: {
+                "User-Agent": GOOGLEBOT_UA,
+                Accept: "text/html,application/xhtml+xml",
+                "Accept-Language": "it-IT,it;q=0.9",
+              },
+            });
+            if (!pr.ok) break;
+            const ph = await pr.text();
+            const before = esselungaCards.length;
+            parseEsselungaPage(ph);
+            if (esselungaCards.length === before) break; // no new items, stop
+          } catch {
+            break;
+          }
+        }
+      }
+
+      // Replace cards with Esselunga-specific results (skip generic + Prestashop)
+      return new Response(
+        JSON.stringify({
+          cards: esselungaCards.slice(0, max),
+          total_found_on_site: declaredTotal ?? esselungaCards.length,
+          source: "esselunga",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+
     // PrestaShop detection: pages expose a `from-xhr=1` JSON endpoint that returns
     // structured products + pagination metadata. Much more reliable than scraping HTML
     // (and bypasses Cloudflare HTML challenges that can fire on subsequent requests).
