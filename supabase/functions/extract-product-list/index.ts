@@ -280,7 +280,7 @@ serve(async (req) => {
       return u.toString();
     };
 
-    if (isPrestashop && cards.length > 0 && cards.length < max) {
+    if (isPrestashop && cards.length < max) {
       try {
         // Fetch page 1 via XHR to learn pages_count
         const r1 = await fetch(buildXhrUrl(1), {
