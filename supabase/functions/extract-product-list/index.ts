@@ -369,10 +369,12 @@ serve(async (req) => {
       }
 
       // Replace cards with Esselunga-specific results (skip generic + Prestashop)
+      const candidates = esselungaCards.slice(0, max);
       return new Response(
         JSON.stringify({
-          cards: esselungaCards.slice(0, max),
-          total_found_on_site: declaredTotal ?? esselungaCards.length,
+          candidates,
+          total_links: candidates.length,
+          total_found_on_site: declaredTotal ?? candidates.length,
           source: "esselunga",
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
