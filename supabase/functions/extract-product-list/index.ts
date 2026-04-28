@@ -171,14 +171,21 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
     const pathMatch = u.pathname.match(/\/page\/(\d+)\/?$/i) ||
       u.pathname.match(/\/page\/(\d+)\//i);
     const queryP = u.searchParams.get("p");
+    const queryPage = u.searchParams.get("page");
     let pageNum = 0;
     let curStyle: "path" | "query" = "path";
+    let curParam: "p" | "page" = "p";
     if (pathMatch) {
       pageNum = Number(pathMatch[1]);
       curStyle = "path";
+    } else if (queryPage && /^\d+$/.test(queryPage)) {
+      pageNum = Number(queryPage);
+      curStyle = "query";
+      curParam = "page";
     } else if (queryP && /^\d+$/.test(queryP)) {
       pageNum = Number(queryP);
       curStyle = "query";
+      curParam = "p";
     }
     if (!pageNum) continue;
     if (pageNum > maxPage) maxPage = pageNum;
@@ -186,6 +193,7 @@ function extractPaginationUrls(html: string, baseUrl: URL): string[] {
       templatePageNum = pageNum;
       templateUrl = abs;
       style = curStyle;
+      (extractPaginationUrls as any)._param = curParam;
     }
   }
 
