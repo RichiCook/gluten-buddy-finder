@@ -104,6 +104,7 @@ function ProductList() {
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [search, setSearch] = useState("");
 
   async function load() {
     const pageSize = 1000;
@@ -141,10 +142,26 @@ function ProductList() {
     return <AddProduct existing={editing} onDone={() => { setEditing(null); load(); }} />;
   }
 
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? items.filter((p) =>
+        [p.name, p.brand, p.category, p.description]
+          .filter(Boolean)
+          .some((v) => (v as string).toLowerCase().includes(q)),
+      )
+    : items;
+
   return (
-    <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">{items.length} prodotti nel DB</p>
-      {items.map((p) => (
+    <div className="space-y-3">
+      <Input
+        placeholder="Cerca per nome, brand, categoria…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      <p className="text-sm text-muted-foreground">
+        {filtered.length} di {items.length} prodotti
+      </p>
+      {filtered.map((p) => (
         <Card key={p.id} className="flex items-center gap-3 p-3">
           <div className="h-14 w-14 shrink-0 rounded bg-muted">
             {p.image_url && (
@@ -163,6 +180,9 @@ function ProductList() {
           </Button>
         </Card>
       ))}
+      {filtered.length === 0 && (
+        <p className="text-center text-sm text-muted-foreground">Nessun prodotto trovato</p>
+      )}
     </div>
   );
 }
