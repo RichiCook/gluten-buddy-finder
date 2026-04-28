@@ -259,14 +259,27 @@ function ImportFromUrl() {
       const initialCount = raw.length;
 
       // 1) Filtro: solo prodotti senza glutine
-      // Verifichiamo SEMPRE ogni singolo prodotto: l'URL della pagina può
-      // essere una ricerca (es. "?q=senza+glutine") che ritorna anche
-      // prodotti correlati con glutine. Non basta fidarsi dell'URL.
+      // Strategia:
+      // - Se l'URL di input è una RICERCA generica (es. "?q=senza+glutine",
+      //   "/catalogsearch/", "/search"), validiamo per ogni prodotto perché
+      //   i risultati possono includere articoli con glutine.
+      // - Se invece l'URL di input è una CATEGORIA dedicata al senza glutine
+      //   (lo slug contiene un marker gluten-free), ci fidiamo della categoria
+      //   ed escludiamo solo prodotti con marcatori espliciti "con glutine".
+      const inputUrlLower = normalizedUrl.toLowerCase();
+      const isSearchUrl = /[?&]q=|\/catalogsearch\/|\/search(\b|\/|\?)|\/ricerca/i.test(inputUrlLower);
+      const inputIsGfCategory =
+        !isSearchUrl &&
+        /senza[\s\-_]*glutine|gluten[\s\-]?free|\bsg\b|-sg-|\/sg\//.test(inputUrlLower);
+
       const isGlutenFree = (c: any) => {
         const hay = `${c?.name || ""} ${c?.description || ""} ${c?.source_url || ""}`.toLowerCase();
-        // Esclusioni esplicite
+        // Esclusioni esplicite (sempre)
         if (/con glutine|contiene glutine/.test(hay)) return false;
-        // Marcatori positivi nel testo o nello slug dell'URL prodotto
+        // Se la pagina di input è una categoria dedicata al senza glutine,
+        // accettiamo tutti i prodotti (eccetto quelli esclusi sopra).
+        if (inputIsGfCategory) return true;
+        // Altrimenti richiediamo un marcatore positivo sul singolo prodotto
         if (/senza[\s\-_]*glutine|gluten[\s\-]?free|\bsg\b|\bs\.g\.\b|-sg-|\/sg\//.test(hay)) return true;
         return false;
       };
