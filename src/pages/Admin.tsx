@@ -104,6 +104,7 @@ function ProductList() {
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [search, setSearch] = useState("");
 
   async function load() {
     const pageSize = 1000;
