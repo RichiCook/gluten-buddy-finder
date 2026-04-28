@@ -317,11 +317,8 @@ serve(async (req) => {
           ingestProducts(j1?.products);
 
           for (let p = 2; p <= pagesCount && cards.length < max; p++) {
-            const u = new URL(baseUrl.toString());
-            u.searchParams.set("from-xhr", "1");
-            u.searchParams.set("page", String(p));
             try {
-              const rp = await fetch(u.toString(), {
+              const rp = await fetch(buildXhrUrl(p), {
                 headers: {
                   "User-Agent": UA,
                   "X-Requested-With": "XMLHttpRequest",
