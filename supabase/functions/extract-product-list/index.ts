@@ -9,6 +9,22 @@ const corsHeaders = {
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
+// Some sites (e.g. Esselunga) are Single-Page Apps that return an empty shell
+// to normal browsers and only render product HTML server-side for search engine
+// crawlers. Using Googlebot UA gives us the pre-rendered listing.
+const GOOGLEBOT_UA =
+  "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
+
+// Hosts known to require Googlebot UA for SSR pre-rendered content.
+const SSR_BOT_HOSTS = [
+  "spesaonline.esselunga.it",
+  "esselunga.it",
+];
+
+function needsBotUA(host: string): boolean {
+  return SSR_BOT_HOSTS.some((h) => host === h || host.endsWith("." + h));
+}
+
 function decodeHtml(s: string): string {
   if (!s) return s;
   let out = s
