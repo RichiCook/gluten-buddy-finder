@@ -73,10 +73,13 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     const u = new URL(abs);
     if (u.host !== baseUrl.host) return;
     if (
-      /\/(cart|checkout|wishlist|account|login|register|content|orders|customer|search|brands|categories?|tags?)\b/i
+      /\/(cart|checkout|wishlist|account|login|register|content|orders|customer|search|brand|brands|categories?|tags?|manufacturer|cms)\b/i
         .test(u.pathname)
     ) return;
     if (u.pathname === baseUrl.pathname || u.pathname === "/") return;
+    // Skip PrestaShop category-style URLs: /xx/123-some-name (no intermediate path segment)
+    // Real product URLs typically end with .html or have an intermediate segment like /xx/category/123-name.html
+    if (/^\/[a-z]{2}\/\d+-[^/]+\/?$/i.test(u.pathname)) return;
     if (seen.has(abs)) return;
     seen.add(abs);
     let absImg: string | null = null;
