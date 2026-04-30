@@ -610,8 +610,11 @@ serve(async (req) => {
       const lastPage = p - 1;
 
 
-      const candidates = efarmaCards.slice(0, max);
-      console.log(`[extract-product-list] eFarma: ${candidates.length} products (lastPage=${lastPage})`);
+      const drugMarkersEf = /\b(integrator\w*|compress\w*|capsul\w*|bustin\w*|sciropp\w*|gocce|flacon\w*|fial\w*|sublingual\w*|orosolubil\w*|spray|unguent\w*|pomat\w*|crema\b|gel\b|lozion\w*|deterg\w+|shampoo|balsamo|dentifric\w+|collutori\w*|sapon\w+|profum\w+|lacca|cosmetic\w*|farmac\w+|antibiotic\w+|analgesi\w+|antinfiamm\w+|antidolorif\w+|cerott\w+|garz\w+|siring\w+|termometr\w+|preservativ\w+|lubrificant\w+|repellent\w+|antizanzar\w+|abbronz\w+|doposole|pannolin\w+|assorbent\w+|salviett\w+|disinfettant\w+|antisettic\w+|cicatrizz\w+|colliri\w*|spazzolin\w+|nasal\w+|aerosol|inalator\w+|mascherin\w+)\b/i;
+      const efBefore = efarmaCards.length;
+      const efarmaFood = efarmaCards.filter((c) => !drugMarkersEf.test(c.name || ""));
+      const candidates = efarmaFood.slice(0, max);
+      console.log(`[extract-product-list] eFarma: ${candidates.length} products (lastPage=${lastPage}, filtered ${efBefore}->${efarmaFood.length})`);
       if (candidates.length > 0) {
         return new Response(
           JSON.stringify({
