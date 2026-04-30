@@ -628,6 +628,92 @@ serve(async (req) => {
       }
     }
 
+    // ===== 1000farmacie.it (Algolia-backed search) =====
+    // The site renders results client-side via Algolia. The Algolia search-only key
+    // is public (exposed in window.env). We query Algolia directly and paginate
+    // through every result, restricted to the food category to skip drugs.
+    const is1000farmacie = /(^|\.)1000farmacie\.it$/i.test(baseUrl.host);
+    if (is1000farmacie) {
+      try {
+        const appIdM = html.match(/"ALGOLIA_APPLICATION_ID"\s*:\s*"([^"]+)"/);
+        const apiKeyM = html.match(/"ALGOLIA_SEARCH_API_KEY"\s*:\s*"([^"]+)"/);
+        const appId = appIdM?.[1] || "HW3T8WVS73";
+        const apiKey = apiKeyM?.[1] || "a44069a5116559934332f93aa82d91d8";
+
+        const pathParts = baseUrl.pathname.split("/").filter(Boolean);
+        const queryRaw = pathParts[0]?.toLowerCase() === "cerca"
+          ? decodeURIComponent(pathParts.slice(1).join("/") || "")
+          : decodeURIComponent(pathParts.join(" "));
+
+        const algoliaUrl = `https://${appId.toLowerCase()}-dsn.algolia.net/1/indexes/Product/query`;
+        const hitsPerPage = 100;
+        const tfCards: Card[] = [];
+        const seen = new Set<string>();
+        let totalHits = 0;
+        let page = 0;
+        let nbPages = 1;
+
+        while (page < nbPages && tfCards.length < max) {
+          const params = new URLSearchParams({
+            query: queryRaw,
+            hitsPerPage: String(hitsPerPage),
+            page: String(page),
+            facetFilters: JSON.stringify([["top_level_category_names:Alimentazione"]]),
+          });
+          const ar = await fetch(algoliaUrl, {
+            method: "POST",
+            headers: {
+              "X-Algolia-API-Key": apiKey,
+              "X-Algolia-Application-Id": appId,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ params: params.toString() }),
+          });
+          if (!ar.ok) {
+            console.log(`[extract-product-list] 1000farmacie Algolia error ${ar.status}`);
+            break;
+          }
+          const data = await ar.json();
+          if (page === 0) {
+            totalHits = data.nbHits || 0;
+            nbPages = Math.min(data.nbPages || 1, Math.ceil(max / hitsPerPage));
+            console.log(`[extract-product-list] 1000farmacie Algolia: nbHits=${totalHits} nbPages=${data.nbPages} fetching=${nbPages}`);
+          }
+          for (const hit of (data.hits || [])) {
+            const link = hit.link || (hit.slug ? `/${hit.slug}.html` : null);
+            if (!link) continue;
+            const abs = new URL(link, baseUrl).toString();
+            if (seen.has(abs)) continue;
+            seen.add(abs);
+            tfCards.push({
+              name: hit.display_name || hit.slug || "",
+              image: hit.url_for_cover_image || null,
+              url: abs,
+              price: typeof hit.price === "number" ? `€${hit.price.toFixed(2)}` : null,
+            });
+            if (tfCards.length >= max) break;
+          }
+          page++;
+        }
+
+        const candidates = tfCards.slice(0, max);
+        console.log(`[extract-product-list] 1000farmacie: ${candidates.length} products (of ${totalHits} in Alimentazione)`);
+        if (candidates.length > 0) {
+          return new Response(
+            JSON.stringify({
+              candidates,
+              total_links: candidates.length,
+              total_available: totalHits,
+              source: "1000farmacie",
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      } catch (err) {
+        console.log(`[extract-product-list] 1000farmacie Algolia failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
 
     // structured products + pagination metadata. Much more reliable than scraping HTML
     // (and bypasses Cloudflare HTML challenges that can fire on subsequent requests).
