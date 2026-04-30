@@ -506,6 +506,118 @@ serve(async (req) => {
     }
 
 
+    // ===== eFarma (Magento-based) =====
+    // Each product is a <form ... class="product-item product ..."> containing
+    // an <a class="product__link product__name" href="..."> with an <h2> name,
+    // and a separate <a> wrapping the <img>. Pagination uses ?p=N.
+    const isEfarma = /(^|\.)efarma\.com$/i.test(baseUrl.host) ||
+      /catalogsearch-result-index|page-products/i.test(html.slice(0, 2000));
+    if (isEfarma) {
+      const seen = new Set<string>();
+      const efarmaCards: Card[] = [];
+
+      const parseEfarmaPage = (pageHtml: string) => {
+        // Split on the product-item form opener
+        const blockRe =
+          /<form\b[^>]*\bclass="[^"]*product-item\s+product[^"]*"[\s\S]*?<\/form>/g;
+        const matches = pageHtml.match(blockRe);
+        if (!matches) return;
+        for (const block of matches) {
+          // Name link: <a class="... product__name ..." href="...">
+          const linkM = block.match(
+            /<a[^>]+class="[^"]*product__name[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/,
+          );
+          let href: string | null = null;
+          let nameRaw = "";
+          if (linkM) {
+            href = linkM[1];
+            nameRaw = linkM[2];
+          } else {
+            // fallback: any product__link
+            const fb = block.match(
+              /<a[^>]+class="[^"]*product__link[^"]*"[^>]+href="([^"]+)"/,
+            );
+            if (fb) href = fb[1];
+          }
+          if (!href) continue;
+          let abs: string;
+          try {
+            abs = new URL(href, baseUrl).toString();
+          } catch {
+            continue;
+          }
+          if (seen.has(abs)) continue;
+          seen.add(abs);
+
+          // name from <h2> inside link, or from img alt
+          let name = "";
+          const h2 = nameRaw.match(/<h2[^>]*>([\s\S]*?)<\/h2>/);
+          if (h2) name = stripTags(h2[1]).trim();
+          if (!name) {
+            const altM = block.match(/<img[^>]+alt="([^"]+)"/);
+            if (altM) name = altM[1];
+          }
+          if (!name) continue;
+
+          // image: prefer the main product <img src=...>
+          let image: string | null = null;
+          const imgM = block.match(
+            /<img[^>]+src="(https?:\/\/[^"]+)"[^>]*alt="[^"]*"/,
+          );
+          if (imgM) image = imgM[1];
+
+          efarmaCards.push({ name, image, source_url: abs });
+        }
+      };
+
+      parseEfarmaPage(html);
+
+      // Detect last page from pagination
+      let lastPage = 1;
+      for (const m of html.matchAll(/[?&]p=(\d+)/g)) {
+        const n = parseInt(m[1], 10);
+        if (!isNaN(n) && n > lastPage) lastPage = n;
+      }
+      const maxPages = Math.min(lastPage, 50);
+
+      for (let p = 2; p <= maxPages && efarmaCards.length < max; p++) {
+        const nextUrl = new URL(baseUrl.toString());
+        nextUrl.searchParams.set("p", String(p));
+        try {
+          const nr = await fetch(nextUrl.toString(), {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+              Accept: "text/html,application/xhtml+xml",
+              "Accept-Language": "it-IT,it;q=0.9",
+            },
+          });
+          if (!nr.ok) break;
+          const nh = await nr.text();
+          const before = efarmaCards.length;
+          parseEfarmaPage(nh);
+          if (efarmaCards.length === before) break;
+        } catch {
+          break;
+        }
+      }
+
+      const candidates = efarmaCards.slice(0, max);
+      console.log(`[extract-product-list] eFarma: ${candidates.length} products (lastPage=${lastPage})`);
+      if (candidates.length > 0) {
+        return new Response(
+          JSON.stringify({
+            candidates,
+            total_links: candidates.length,
+            total_found_on_site: candidates.length,
+            source: "efarma",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
+
     // structured products + pagination metadata. Much more reliable than scraping HTML
     // (and bypasses Cloudflare HTML challenges that can fire on subsequent requests).
     const isPrestashop = /prestashop/i.test(html) ||
