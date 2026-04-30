@@ -69,36 +69,42 @@ serve(async (req) => {
     const matches = await Promise.all(
       ingredients.map(async (ing) => {
         const ingNameLower = ing.name.toLowerCase().trim();
+        const isGenericIngredient = GENERIC_TERMS.has(ingNameLower);
 
-        // SPECIFIC keywords: nome ingrediente + search_keywords NON generiche.
-        // Almeno una di queste DEVE comparire nel nome/brand del prodotto.
-        const specificSet = new Set<string>();
-        if (!GENERIC_TERMS.has(ingNameLower)) {
-          morphVariants(ingNameLower).forEach((v) => specificSet.add(v));
-        }
+        // MANDATORY terms: il nome dell'ingrediente (e sue varianti morfologiche
+        // dirette) DEVE comparire nel nome del prodotto. Le search_keywords NON
+        // possono ammettere prodotti che non contengono il nome dell'ingrediente,
+        // perchè spesso sono sinonimi ambigui (es. "cornetto" per "brioche" che
+        // matcherebbe anche "cornetti di mais").
+        const mandatorySet = new Set<string>();
+        morphVariants(ingNameLower).forEach((v) => mandatorySet.add(v));
+        // Aggiungi anche singole parole significative del nome (>3 char, non generiche)
         ingNameLower
           .split(/[\s'']+/)
           .filter((t) => t.length > 3 && !GENERIC_TERMS.has(t))
-          .forEach((t) => morphVariants(t).forEach((v) => specificSet.add(v)));
+          .forEach((t) => morphVariants(t).forEach((v) => mandatorySet.add(v)));
+        const mandatoryTerms = Array.from(mandatorySet).filter(Boolean);
+
+        // BOOST terms: search_keywords usate solo per dare punteggio extra,
+        // non per ammettere prodotti.
+        const boostSet = new Set<string>();
         (ing.search_keywords || []).forEach((k) => {
           const kk = k?.toLowerCase().trim();
           if (kk && kk.length > 2 && !GENERIC_TERMS.has(kk)) {
-            morphVariants(kk).forEach((v) => specificSet.add(v));
+            morphVariants(kk).forEach((v) => boostSet.add(v));
           }
         });
+        const boostTerms = Array.from(boostSet).filter(Boolean);
 
-        const specificArr = Array.from(specificSet).filter(Boolean);
-        // Fallback: se l'ingrediente è solo un termine generico (es. "pasta"),
-        // usa quel termine come unico criterio (comportamento precedente).
-        const searchTerms = specificArr.length > 0 ? specificArr : [ingNameLower];
-
-        const orFilters = searchTerms.flatMap((k) => [
+        // Per la query iniziale recuperiamo candidati che matchano i termini
+        // obbligatori (per ingredienti generici come "pasta" usiamo il termine stesso).
+        const queryTerms = mandatoryTerms.length > 0 ? mandatoryTerms : [ingNameLower];
+        const orFilters = queryTerms.flatMap((k) => [
           `name.ilike.%${k}%`,
           `brand.ilike.%${k}%`,
         ]).join(",");
 
         let candidates: any[] = [];
-
         if (orFilters) {
           const { data, error } = await supabase
             .from("products")
@@ -109,26 +115,40 @@ serve(async (req) => {
           else candidates = data || [];
         }
 
-        // Filtro stretto: il prodotto DEVE contenere uno dei termini specifici
-        // nel name o brand, altrimenti viene scartato.
+        // Filtro stretto: il prodotto DEVE contenere il NOME dell'ingrediente
+        // (o una sua variante morfologica) nel name. Brand match conta solo se
+        // il nome contiene anche il termine.
         const ranked = candidates
           .map((p) => {
             const nameLower = (p.name || "").toLowerCase();
             const brandLower = (p.brand || "").toLowerCase();
 
             let score = 0;
-            let specificHit = false;
-            for (const kw of searchTerms) {
-              if (nameLower.includes(kw)) { score += 10; specificHit = true; }
-              else if (brandLower.includes(kw)) { score += 4; specificHit = true; }
+            let mandatoryHit = false;
+            for (const kw of mandatoryTerms) {
+              if (nameLower.includes(kw)) { score += 10; mandatoryHit = true; }
             }
-            if (nameLower.includes(ingNameLower)) score += 6;
+            // Per ingredienti generici (es. "pasta") accettiamo anche match nel brand
+            if (!mandatoryHit && isGenericIngredient) {
+              for (const kw of queryTerms) {
+                if (nameLower.includes(kw) || brandLower.includes(kw)) {
+                  score += 8;
+                  mandatoryHit = true;
+                }
+              }
+            }
+            // Boost terms aggiungono punti solo se già c'è un mandatory hit
+            if (mandatoryHit) {
+              for (const kw of boostTerms) {
+                if (nameLower.includes(kw)) score += 2;
+              }
+            }
             if (DB_CATEGORIES.has(ing.category) && p.category === ing.category) {
               score += 2;
             }
-            return { ...p, _score: score, _specificHit: specificHit };
+            return { ...p, _score: score, _mandatoryHit: mandatoryHit };
           })
-          .filter((p) => p._specificHit && p._score >= 10)
+          .filter((p) => p._mandatoryHit && p._score >= 8)
           .sort((a, b) => b._score - a._score)
           .slice(0, 12);
 
