@@ -874,11 +874,80 @@ serve(async (req) => {
       }
     }
 
+    // ===== Firecrawl fallback for SPA / JS-rendered sites =====
+    // If we found no candidates from the raw HTML (typical for Next.js / React SPA
+    // sites like benufarma.it), retry by scraping with Firecrawl which renders JS.
+    if (cards.length === 0) {
+      const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
+      if (firecrawlKey) {
+        console.log(`[extract-product-list] no cards from raw HTML, trying Firecrawl fallback for ${normalized}`);
+        try {
+          const fcResp = await fetch("https://api.firecrawl.dev/v2/scrape", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${firecrawlKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url: normalized,
+              formats: ["html", "links"],
+              onlyMainContent: false,
+              waitFor: 3500,
+              location: { country: "IT", languages: ["it-IT", "it"] },
+            }),
+          });
+          const fcData = await fcResp.json().catch(() => null);
+          if (fcResp.ok && fcData) {
+            const renderedHtml: string =
+              (fcData.data && (fcData.data.html || fcData.data.rawHtml)) ||
+              fcData.html || fcData.rawHtml || "";
+            const renderedLinks: string[] =
+              (fcData.data && fcData.data.links) || fcData.links || [];
+            console.log(`[extract-product-list] Firecrawl returned htmlBytes=${renderedHtml.length} links=${renderedLinks.length}`);
+            if (renderedHtml) {
+              const fcCards = extractCards(renderedHtml, baseUrl);
+              if (fcCards.length > 0) {
+                cards = fcCards;
+                console.log(`[extract-product-list] Firecrawl extracted ${cards.length} cards`);
+              }
+            }
+            // As a last resort, build minimal cards from product-like links
+            if (cards.length === 0 && renderedLinks.length > 0) {
+              const seen = new Set<string>();
+              const linkCards: Card[] = [];
+              for (const href of renderedLinks) {
+                if (!href || typeof href !== "string") continue;
+                if (!/\/(p|product|prodotto|prodotti|products?)\//i.test(href) &&
+                    !/\.html?$/i.test(href)) continue;
+                if (/\/(category|categoria|search|cart|account|login)/i.test(href)) continue;
+                let abs: string;
+                try { abs = new URL(href, baseUrl).toString(); } catch { continue; }
+                if (seen.has(abs)) continue;
+                seen.add(abs);
+                const slug = (abs.split("?")[0].split("#")[0].split("/").filter(Boolean).pop() || "")
+                  .replace(/\.html?$/i, "").replace(/-/g, " ").trim();
+                if (!slug || slug.length < 3) continue;
+                linkCards.push({ name: slug, image: null, url: abs, price: null });
+              }
+              if (linkCards.length > 0) {
+                cards = linkCards;
+                console.log(`[extract-product-list] Firecrawl link-fallback built ${cards.length} cards`);
+              }
+            }
+          } else {
+            console.log(`[extract-product-list] Firecrawl error ${fcResp.status}: ${JSON.stringify(fcData).slice(0, 300)}`);
+          }
+        } catch (fcErr) {
+          console.log(`[extract-product-list] Firecrawl fetch failed: ${fcErr instanceof Error ? fcErr.message : fcErr}`);
+        }
+      }
+    }
+
     // ===== Food-only filter for pharmacy sites =====
     // Some pharmacy sites (farmaciaeuropea.it, efarma.com, ...) mix food
     // products with drugs/supplements. When the source is a pharmacy, drop
     // anything whose name strongly indicates a drug, supplement, or cosmetic.
-    const pharmacyHosts = /(farmaciaeuropea|farmacia|efarma|farmae|farmacosmo|topfarmacia|amicafarmacia|farmaciauno|farmaciaigea)/i;
+    const pharmacyHosts = /(farmaciaeuropea|farmacia|efarma|farmae|farmacosmo|topfarmacia|amicafarmacia|farmaciauno|farmaciaigea|benufarma|benu)/i;
     const isPharmacy = pharmacyHosts.test(baseUrl.host);
     if (isPharmacy) {
       const drugMarkers = /\b(integrator\w*|compress\w*|capsul\w*|bustin\w*|sciropp\w*|gocce|flacon\w*|fial\w*|sublingual\w*|orosolubil\w*|granular\w*|polvere?\s+oral\w+|spray|unguent\w*|pomat\w*|crema\b|gel\b|lozion\w*|deterg\w+|shampoo|balsamo|dentifric\w+|collutori\w*|sapon\w+|profum\w+|lacca|cosmetic\w*|farmac\w+|antibiotic\w+|analgesi\w+|antinfiamm\w+|antidolorif\w+|cerott\w+|garz\w+|siring\w+|termometr\w+|preservativ\w+|lubrificant\w+|repellent\w+|antizanzar\w+|abbronz\w+|doposole|pannolin\w+|assorbent\w+|salviett\w+|disinfettant\w+|antisettic\w+|cicatrizz\w+|colliri\w*|spazzolin\w+|nasal\w+|aerosol|inalator\w+|mascherin\w+)\b/i;
