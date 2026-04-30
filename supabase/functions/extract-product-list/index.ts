@@ -382,7 +382,130 @@ serve(async (req) => {
     }
 
 
-    // PrestaShop detection: pages expose a `from-xhr=1` JSON endpoint that returns
+    // ===== Koro Shop (Shopware-based) =====
+    // The search page renders only ~7 products inline; the full result set
+    // (e.g. 32 items) is served by the AJAX widget endpoint /widgets/search.
+    // Each product is wrapped in <div class="card product-box ..."> with
+    // <a class="product-box-link" href="..." title="..."> and <div class="product-name">.
+    const isKoro = /(^|\.)koro-shop\.it$/i.test(baseUrl.host) ||
+      /(^|\.)korodrogerie\./i.test(baseUrl.host);
+    if (isKoro) {
+      const seen = new Set<string>();
+      const koroCards: Card[] = [];
+
+      const parseKoroPage = (pageHtml: string) => {
+        const blockRe =
+          /<div class="card product-box[^"]*"[\s\S]*?(?=<div class="card product-box|<\/main>|<\/body>)/g;
+        let m: RegExpExecArray | null;
+        while ((m = blockRe.exec(pageHtml)) !== null) {
+          const block = m[0];
+          const linkM = block.match(
+            /<a[^>]+class="product-box-link"[^>]*href="([^"]+)"[^>]*(?:title="([^"]+)")?/,
+          );
+          if (!linkM) continue;
+          const href = linkM[1];
+          let abs: string;
+          try {
+            abs = new URL(href, baseUrl).toString();
+          } catch {
+            continue;
+          }
+          if (seen.has(abs)) continue;
+          seen.add(abs);
+
+          let name = linkM[2] || "";
+          if (!name) {
+            const nameM = block.match(
+              /<div class="product-name"[^>]*>([\s\S]*?)<\/div>/,
+            );
+            if (nameM) name = stripTags(nameM[1]).trim();
+          }
+          if (!name) {
+            const titleM = block.match(/title="([^"]+)"/);
+            if (titleM) name = titleM[1];
+          }
+
+          // Image: prefer the data-src/src in product-image-wrapper
+          let image: string | null = null;
+          const imgM = block.match(
+            /<img[^>]+(?:data-src|src)="([^"]+)"[^>]*class="[^"]*product-image[^"]*"/,
+          ) || block.match(/<img[^>]+(?:data-src|src)="(https?:[^"]+)"/);
+          if (imgM) image = imgM[1];
+
+          koroCards.push({
+            name: stripTags(name),
+            image,
+            source_url: abs,
+          });
+        }
+      };
+
+      // 1) parse the inline HTML we already have
+      parseKoroPage(html);
+
+      // 2) fetch the AJAX widget for the full result set
+      const searchParam = baseUrl.searchParams.get("search") || "";
+      if (searchParam) {
+        const widgetUrl = `${baseUrl.origin}/widgets/search?search=${
+          encodeURIComponent(searchParam)
+        }&p=1`;
+        try {
+          const wr = await fetch(widgetUrl, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+              "X-Requested-With": "XMLHttpRequest",
+              Accept: "text/html,application/xhtml+xml",
+              "Accept-Language": "it-IT,it;q=0.9",
+            },
+          });
+          if (wr.ok) {
+            const wh = await wr.text();
+            parseKoroPage(wh);
+
+            // paginate further if there's a "next" page
+            for (let p = 2; p <= 20 && koroCards.length < max; p++) {
+              const nextUrl = `${baseUrl.origin}/widgets/search?search=${
+                encodeURIComponent(searchParam)
+              }&p=${p}`;
+              try {
+                const nr = await fetch(nextUrl, {
+                  headers: {
+                    "User-Agent":
+                      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+                    "X-Requested-With": "XMLHttpRequest",
+                    Accept: "text/html,application/xhtml+xml",
+                  },
+                });
+                if (!nr.ok) break;
+                const nh = await nr.text();
+                const before = koroCards.length;
+                parseKoroPage(nh);
+                if (koroCards.length === before) break;
+              } catch {
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          console.error("[koro] widget fetch failed", e);
+        }
+      }
+
+      const candidates = koroCards.slice(0, max);
+      console.log(`[extract-product-list] Koro: ${candidates.length} products`);
+      return new Response(
+        JSON.stringify({
+          candidates,
+          total_links: candidates.length,
+          total_found_on_site: candidates.length,
+          source: "koro-shop",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+
     // structured products + pagination metadata. Much more reliable than scraping HTML
     // (and bypasses Cloudflare HTML challenges that can fire on subsequent requests).
     const isPrestashop = /prestashop/i.test(html) ||
