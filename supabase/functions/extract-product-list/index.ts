@@ -688,8 +688,7 @@ serve(async (req) => {
             tfCards.push({
               name: hit.display_name || hit.slug || "",
               image: hit.url_for_cover_image || null,
-              url: abs,
-              price: typeof hit.price === "number" ? `€${hit.price.toFixed(2)}` : null,
+              source_url: abs,
             });
             if (tfCards.length >= max) break;
           }
