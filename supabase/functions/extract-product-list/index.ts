@@ -1053,7 +1053,7 @@ serve(async (req) => {
                 const slug = (abs.split("?")[0].split("#")[0].split("/").filter(Boolean).pop() || "")
                   .replace(/\.html?$/i, "").replace(/-/g, " ").trim();
                 if (!slug || slug.length < 3) continue;
-                linkCards.push({ name: slug, image: null, url: abs, price: null });
+                linkCards.push({ name: slug, image: null, source_url: abs });
               }
               if (linkCards.length > 0) {
                 cards = linkCards;
