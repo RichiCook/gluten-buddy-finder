@@ -713,6 +713,80 @@ serve(async (req) => {
       }
     }
 
+    // ===== macrolibrarsi.it (Vue SPA backed by /feed/s.php JSON endpoint) =====
+    // The search page renders results client-side. The JSON feed returns numFound,
+    // pages, pageLenght (24) and a results[] with id, title, url, prices, etc.
+    const isMacrolibrarsi = /(^|\.)macrolibrarsi\.it$/i.test(baseUrl.host);
+    if (isMacrolibrarsi) {
+      try {
+        // Extract the search query from ?search3=... (or fallback path)
+        const searchTerm =
+          baseUrl.searchParams.get("search3") ||
+          baseUrl.searchParams.get("q") ||
+          decodeURIComponent(baseUrl.pathname.split("/").filter(Boolean).join(" "));
+
+        const mlCards: Card[] = [];
+        const seenMl = new Set<string>();
+        let numFound = 0;
+        let totalPages = 1;
+        let pageNum = 1;
+
+        while (pageNum <= totalPages && mlCards.length < max) {
+          const feedUrl = `https://www.macrolibrarsi.it/feed/s.php?q=${encodeURIComponent(searchTerm)}&pag=${pageNum}`;
+          const fr = await fetch(feedUrl, {
+            headers: {
+              "Accept": "application/json, text/plain, */*",
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+              "Referer": baseUrl.toString(),
+            },
+          });
+          if (!fr.ok) {
+            console.log(`[extract-product-list] macrolibrarsi feed error ${fr.status} on page ${pageNum}`);
+            break;
+          }
+          const data = await fr.json();
+          if (pageNum === 1) {
+            numFound = Number(data.numFound) || 0;
+            totalPages = Number(data.pages) || 1;
+            console.log(`[extract-product-list] macrolibrarsi: numFound=${numFound} pages=${totalPages} pageLenght=${data.pageLenght}`);
+          }
+          const results = Array.isArray(data.results) ? data.results : [];
+          if (results.length === 0) break;
+          for (const r of results) {
+            if (r?.type && String(r.type).toLowerCase() !== "prodotto") continue;
+            const link = r?.url;
+            if (!link || typeof link !== "string") continue;
+            if (seenMl.has(link)) continue;
+            seenMl.add(link);
+            const title = [r.title, r.subtitle].filter(Boolean).join(" - ");
+            mlCards.push({
+              name: title || r.title || "",
+              image: r.image || r.cover || null,
+              source_url: link,
+            });
+            if (mlCards.length >= max) break;
+          }
+          pageNum++;
+        }
+
+        const candidates = mlCards.slice(0, max);
+        console.log(`[extract-product-list] macrolibrarsi: ${candidates.length} products (of ${numFound} total)`);
+        if (candidates.length > 0) {
+          return new Response(
+            JSON.stringify({
+              candidates,
+              total_links: candidates.length,
+              total_available: numFound,
+              source: "macrolibrarsi",
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      } catch (err) {
+        console.log(`[extract-product-list] macrolibrarsi feed failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
 
     // structured products + pagination metadata. Much more reliable than scraping HTML
     // (and bypasses Cloudflare HTML challenges that can fire on subsequent requests).
