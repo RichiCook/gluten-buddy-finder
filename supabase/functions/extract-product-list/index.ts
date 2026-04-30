@@ -572,15 +572,14 @@ serve(async (req) => {
 
       parseEfarmaPage(html);
 
-      // Detect last page from pagination
-      let lastPage = 1;
-      for (const m of html.matchAll(/[?&]p=(\d+)/g)) {
-        const n = parseInt(m[1], 10);
-        if (!isNaN(n) && n > lastPage) lastPage = n;
-      }
-      const maxPages = Math.min(lastPage, 50);
-
-      for (let p = 2; p <= maxPages && efarmaCards.length < max; p++) {
+      // Magento pagination usually only links to the next ~5 pages, not the
+      // real last page, so we cannot rely on the highest visible "?p=N".
+      // Strategy: keep paging until we get an empty page OR no new products.
+      // Cap at 200 pages as safety. Re-fetch each page after the last one we
+      // discovered, expanding our window dynamically.
+      let p = 2;
+      let consecutiveEmpty = 0;
+      while (p <= 200 && efarmaCards.length < max) {
         const nextUrl = new URL(baseUrl.toString());
         nextUrl.searchParams.set("p", String(p));
         try {
@@ -596,11 +595,20 @@ serve(async (req) => {
           const nh = await nr.text();
           const before = efarmaCards.length;
           parseEfarmaPage(nh);
-          if (efarmaCards.length === before) break;
+          if (efarmaCards.length === before) {
+            consecutiveEmpty++;
+            // give 2 chances in case a single page renders 0 cards
+            if (consecutiveEmpty >= 2) break;
+          } else {
+            consecutiveEmpty = 0;
+          }
+          p++;
         } catch {
           break;
         }
       }
+      const lastPage = p - 1;
+
 
       const candidates = efarmaCards.slice(0, max);
       console.log(`[extract-product-list] eFarma: ${candidates.length} products (lastPage=${lastPage})`);
