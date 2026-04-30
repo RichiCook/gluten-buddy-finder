@@ -885,6 +885,34 @@ serve(async (req) => {
       if (paginationUrls.length) {
         console.log(`[extract-product-list] following classic pagination: pages=${paginationUrls.length}`);
       }
+
+      // Detect highest page number already in classic pagination, per param style.
+      // Probe will resume from (highest+1) instead of restarting from 2 (which
+      // would re-fetch already-seen pages and trigger immediate consecutiveEmpty).
+      const highestSeen: { page: number; p: number } = { page: 1, p: 1 };
+      for (const u of paginationUrls) {
+        try {
+          const uu = new URL(u);
+          const qp = uu.searchParams.get("p");
+          const qpage = uu.searchParams.get("page");
+          if (qp && /^\d+$/.test(qp)) highestSeen.p = Math.max(highestSeen.p, Number(qp));
+          if (qpage && /^\d+$/.test(qpage)) highestSeen.page = Math.max(highestSeen.page, Number(qpage));
+        } catch { /* ignore */ }
+      }
+
+      // Magento exposes the real total count in the toolbar: data-amount="N".
+      // Use it to compute the expected number of pages (assuming 24/page default
+      // for Magento, 12 for some PrestaShop themes — fall back to 24).
+      const totalAmountMatch = html.match(/data-amount=["'](\d+)["']/);
+      const totalAmount = totalAmountMatch ? Number(totalAmountMatch[1]) : 0;
+      let expectedLastPage = 0;
+      if (totalAmount > 0 && cards.length > 0) {
+        // Estimate items-per-page from the first page's card count (deduped).
+        const perPage = Math.max(1, cards.length);
+        expectedLastPage = Math.ceil(totalAmount / perPage);
+        console.log(`[extract-product-list] toolbar total=${totalAmount} perPage~${perPage} expectedLastPage=${expectedLastPage}`);
+      }
+
       for (const pageUrl of paginationUrls) {
         if (cards.length >= max) break;
         try {
@@ -916,7 +944,20 @@ serve(async (req) => {
           if (cards.length >= max) break;
           // Skip if base URL already has this param set (avoids re-fetching same page)
           if (baseUrl.searchParams.has(probeParam)) continue;
-          const probeUrls = buildProbePages(baseUrl, 50, probeParam);
+          // Resume probing from after the last page we already fetched via the
+          // visible paginator. Magento only links to ~5 pages, but the real list
+          // can have 20+ pages, so probing from p=2 would just hit duplicates.
+          const startFrom = (highestSeen[probeParam] || 1) + 1;
+          // Probe up to expectedLastPage (from toolbar) or 50 pages, whichever
+          // is larger — capped at 200 for safety.
+          const upTo = Math.min(200, Math.max(50, expectedLastPage || 0));
+          const probeUrls: string[] = [];
+          for (let i = startFrom; i <= upTo; i++) {
+            const u = new URL(baseUrl.toString());
+            u.searchParams.set(probeParam, String(i));
+            probeUrls.push(u.toString());
+          }
+          if (probeUrls.length === 0) continue;
           let consecutiveEmpty = 0;
           let firstAdded = false;
           console.log(`[extract-product-list] probing ?${probeParam}=N pages (start)`);
