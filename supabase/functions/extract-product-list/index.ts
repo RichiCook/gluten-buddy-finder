@@ -871,6 +871,19 @@ serve(async (req) => {
       }
     }
 
+    // ===== Food-only filter for pharmacy sites =====
+    // Some pharmacy sites (farmaciaeuropea.it, efarma.com, ...) mix food
+    // products with drugs/supplements. When the source is a pharmacy, drop
+    // anything whose name strongly indicates a drug, supplement, or cosmetic.
+    const pharmacyHosts = /(farmaciaeuropea|farmacia|efarma|farmae|farmacosmo|topfarmacia|amicafarmacia|farmaciauno|farmaciaigea)/i;
+    const isPharmacy = pharmacyHosts.test(baseUrl.host);
+    if (isPharmacy) {
+      const drugMarkers = /\b(integrator\w*|compress\w*|capsul\w*|bustin\w*|sciropp\w*|gocce|flacon\w*|fial\w*|sublingual\w*|orosolubil\w*|granular\w*|polvere?\s+oral\w+|spray|unguent\w*|pomat\w*|crema\b|gel\b|lozion\w*|deterg\w+|shampoo|balsamo|dentifric\w+|collutori\w*|sapon\w+|profum\w+|lacca|cosmetic\w*|farmac\w+|antibiotic\w+|analgesi\w+|antinfiamm\w+|antidolorif\w+|cerott\w+|garz\w+|siring\w+|termometr\w+|preservativ\w+|lubrificant\w+|repellent\w+|antizanzar\w+|abbronz\w+|doposole|pannolin\w+|assorbent\w+|salviett\w+|disinfettant\w+|antisettic\w+|cicatrizz\w+|colliri\w*|spazzolin\w+|nasal\w+|aerosol|inalator\w+|mascherin\w+)\b/i;
+      const before = cards.length;
+      cards = cards.filter((c) => !drugMarkers.test(c.name || ""));
+      console.log(`[extract-product-list] food-only filter (pharmacy): ${before} -> ${cards.length}`);
+    }
+
     const candidates = cards.slice(0, max);
 
     return new Response(
