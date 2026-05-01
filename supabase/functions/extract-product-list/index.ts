@@ -812,8 +812,20 @@ serve(async (req) => {
           let emptyStreak = 0;
           const maxPages = 200;
 
+          // If the user is searching for gluten-free products, hit the dedicated
+          // "Alimenti senza glutine" category (id 55) which contains ONLY food
+          // products — no medicines, supplements or cosmetics. Otherwise, restrict
+          // to the broader food category (id 45) using sub_category=true so we still
+          // exclude pharmacy items.
+          const normTerm = searchTerm.toLowerCase().replace(/\s+/g, " ").trim();
+          const isGlutenFreeQuery = /senza\s*glutine|gluten[\s-]*free/.test(normTerm);
+          const buildUrl = (p: number) =>
+            isGlutenFreeQuery
+              ? `https://farmaciaguacci.it/index.php?route=product/category&path=45_49_55&page=${p}`
+              : `https://farmaciaguacci.it/index.php?route=product/search&search=${encodeURIComponent(searchTerm)}&category_id=45&sub_category=true&page=${p}`;
+
           while (pageNum <= maxPages && fgCards.length < max && emptyStreak < 2) {
-            const searchUrl = `https://farmaciaguacci.it/index.php?route=product/search&search=${encodeURIComponent(searchTerm)}&page=${pageNum}`;
+            const searchUrl = buildUrl(pageNum);
             const fr = await fetch(searchUrl, {
               headers: { "User-Agent": UA, "Accept": "text/html" },
             });
@@ -831,11 +843,12 @@ serve(async (req) => {
               added++;
               if (fgCards.length >= max) break;
             }
-            console.log(`[extract-product-list] farmaciaguacci page ${pageNum}: +${added} (total ${fgCards.length})`);
+            console.log(`[extract-product-list] farmaciaguacci page ${pageNum} (mode=${isGlutenFreeQuery ? "cat55" : "search+cat45"}): +${added} (total ${fgCards.length})`);
             if (added === 0) emptyStreak++;
             else emptyStreak = 0;
             pageNum++;
           }
+
 
           if (fgCards.length > 0) {
             const candidates = fgCards.slice(0, max);
