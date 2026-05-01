@@ -787,6 +787,74 @@ serve(async (req) => {
       }
     }
 
+    // ===== farmaciaguacci.it (OpenCart with embedded JS search widget) =====
+    // The widget URL puts the query in the fragment (#...&q=...) which never reaches
+    // the server. We bypass it and hit OpenCart's native search at
+    // /index.php?route=product/search&search=...&page=N (12 products per page,
+    // no visible pagination UI but ?page=N works server-side).
+    const isFarmaciaguacci = /(^|\.)farmaciaguacci\.it$/i.test(baseUrl.host);
+    if (isFarmaciaguacci) {
+      try {
+        let searchTerm =
+          baseUrl.searchParams.get("q") ||
+          baseUrl.searchParams.get("search") ||
+          "";
+        if (!searchTerm) {
+          const hash = baseUrl.hash || "";
+          const m = hash.match(/[?&#]q=([^&]+)/) || hash.match(/[?&#]search=([^&]+)/);
+          if (m) searchTerm = decodeURIComponent(m[1].replace(/\+/g, " "));
+        }
+
+        if (searchTerm) {
+          const fgCards: Card[] = [];
+          const seenFg = new Set<string>();
+          let pageNum = 1;
+          let emptyStreak = 0;
+          const maxPages = 200;
+
+          while (pageNum <= maxPages && fgCards.length < max && emptyStreak < 2) {
+            const searchUrl = `https://farmaciaguacci.it/index.php?route=product/search&search=${encodeURIComponent(searchTerm)}&page=${pageNum}`;
+            const fr = await fetch(searchUrl, {
+              headers: { "User-Agent": UA, "Accept": "text/html" },
+            });
+            if (!fr.ok) {
+              console.log(`[extract-product-list] farmaciaguacci page ${pageNum} HTTP ${fr.status}`);
+              break;
+            }
+            const pageHtml = await fr.text();
+            const cards = extractCards(pageHtml, new URL(searchUrl));
+            let added = 0;
+            for (const c of cards) {
+              if (seenFg.has(c.source_url)) continue;
+              seenFg.add(c.source_url);
+              fgCards.push(c);
+              added++;
+              if (fgCards.length >= max) break;
+            }
+            console.log(`[extract-product-list] farmaciaguacci page ${pageNum}: +${added} (total ${fgCards.length})`);
+            if (added === 0) emptyStreak++;
+            else emptyStreak = 0;
+            pageNum++;
+          }
+
+          if (fgCards.length > 0) {
+            const candidates = fgCards.slice(0, max);
+            return new Response(
+              JSON.stringify({
+                candidates,
+                total_links: candidates.length,
+                source: "farmaciaguacci",
+              }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+        } else {
+          console.log("[extract-product-list] farmaciaguacci: no search term found in URL");
+        }
+      } catch (err) {
+        console.log(`[extract-product-list] farmaciaguacci failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
 
     // structured products + pagination metadata. Much more reliable than scraping HTML
     // (and bypasses Cloudflare HTML challenges that can fire on subsequent requests).
