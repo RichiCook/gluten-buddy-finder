@@ -9,7 +9,6 @@ export function AppLayout({ children, title }: { children: ReactNode; title?: st
       <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-lg items-center gap-3 px-4 py-3">
           <Link to="/" className="flex items-center gap-2">
-            <img src={logo} alt="Gluten Baby" className="h-9 w-9" width={36} height={36} />
             <span className="text-lg font-bold tracking-tight text-primary">Gluten Baby</span>
           </Link>
           {title && (
