@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { BottomNav } from "./BottomNav";
-import logo from "@/assets/logo.png";
+
 import { Link } from "react-router-dom";
 
 export function AppLayout({ children, title }: { children: ReactNode; title?: string }) {
