@@ -379,6 +379,7 @@ serve(async (req) => {
       .join("; ");
 
     let cards: Card[] = fetchBlocked ? [] : extractCards(html, baseUrl);
+    console.log(`[extract-product-list] HTML length=${html.length}, cards=${cards.length}, host=${baseUrl.host}, product-box-link count=${(html.match(/product-box-link/g) || []).length}`);
     const ajax = fetchBlocked ? null : extractAjaxState(html);
 
     // ===== Shopify JSON API handler =====
