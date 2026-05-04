@@ -146,6 +146,31 @@ serve(async (req) => {
             if (DB_CATEGORIES.has(ing.category) && p.category === ing.category) {
               score += 2;
             }
+
+            // ── Priorità prodotto finito vs preparato/farina ──
+            // Quando l'ingrediente è un prodotto finito (es. "pane"),
+            // premiamo i prodotti pronti e penalizziamo mix/farine/preparati.
+            const READY_PRODUCT_TERMS: Record<string, { boost: RegExp; penalize: RegExp }> = {
+              pane: {
+                boost: /\b(pane|pancarr[eé]|fett[eai]\b|cassetta|sandwich|tramezzin|pan\s)/i,
+                penalize: /\b(mix|preparato|preparati|farina|farine|lievito|impast)/i,
+              },
+              pizza: {
+                boost: /\b(pizza|pizz[ae]|focaccia|base\s+pizza)/i,
+                penalize: /\b(mix|preparato|preparati|farina|farine|lievito|impast)/i,
+              },
+              pasta: {
+                boost: /\b(pasta|spaghet|pennett?[eai]|fusill|rigatoni|maccheroni|tagliatell|lasagn|gnocch)/i,
+                penalize: /\b(mix|preparato|preparati|farina|farine|semola)/i,
+              },
+            };
+            const readyRule = READY_PRODUCT_TERMS[ingNameLower] ||
+              (ing.category && READY_PRODUCT_TERMS[ing.category.toLowerCase()]);
+            if (readyRule) {
+              if (readyRule.boost.test(nameLower)) score += 15;
+              if (readyRule.penalize.test(nameLower)) score -= 10;
+            }
+
             return { ...p, _score: score, _mandatoryHit: mandatoryHit };
           })
           .filter((p) => p._mandatoryHit && p._score >= 8)
