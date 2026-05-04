@@ -1127,8 +1127,6 @@ serve(async (req) => {
             probeUrls.push(u.toString());
           }
           if (probeUrls.length === 0) continue;
-          let consecutiveEmpty = 0;
-          let firstAdded = false;
           console.log(`[extract-product-list] probing ?${probeParam}=N pages (start, ${probeUrls.length} pages)`);
           // Probe in parallel batches
           let firstAdded = false;
