@@ -1301,12 +1301,16 @@ serve(async (req) => {
 
     // ===== Firecrawl fallback for SPA / JS-rendered sites =====
     // If we found no candidates from the raw HTML (typical for Next.js / React SPA
-    // sites like benufarma.it), retry by scraping with Firecrawl which renders JS.
+    // sites like benufarma.it, or anti-bot sites like drmax.it), retry with Firecrawl.
     if (cards.length === 0) {
       const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
       if (firecrawlKey) {
         console.log(`[extract-product-list] no cards from raw HTML, trying Firecrawl fallback for ${normalized}`);
-        try {
+
+        const fcSeen = new Set<string>();
+        const fcAllCards: Card[] = [];
+
+        const scrapePage = async (pageUrl: string): Promise<{ cards: Card[]; totalHint: number }> => {
           const fcResp = await fetch("https://api.firecrawl.dev/v2/scrape", {
             method: "POST",
             headers: {
@@ -1314,7 +1318,7 @@ serve(async (req) => {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              url: normalized,
+              url: pageUrl,
               formats: ["html", "links"],
               onlyMainContent: false,
               waitFor: 3500,
@@ -1322,45 +1326,83 @@ serve(async (req) => {
             }),
           });
           const fcData = await fcResp.json().catch(() => null);
-          if (fcResp.ok && fcData) {
-            const renderedHtml: string =
-              (fcData.data && (fcData.data.html || fcData.data.rawHtml)) ||
-              fcData.html || fcData.rawHtml || "";
-            const renderedLinks: string[] =
-              (fcData.data && fcData.data.links) || fcData.links || [];
-            console.log(`[extract-product-list] Firecrawl returned htmlBytes=${renderedHtml.length} links=${renderedLinks.length}`);
-            if (renderedHtml) {
-              const fcCards = extractCards(renderedHtml, baseUrl);
-              if (fcCards.length > 0) {
-                cards = fcCards;
-                console.log(`[extract-product-list] Firecrawl extracted ${cards.length} cards`);
-              }
-            }
-            // As a last resort, build minimal cards from product-like links
-            if (cards.length === 0 && renderedLinks.length > 0) {
-              const seen = new Set<string>();
-              const linkCards: Card[] = [];
-              for (const href of renderedLinks) {
-                if (!href || typeof href !== "string") continue;
-                if (!/\/(p|product|prodotto|prodotti|products?)\//i.test(href) &&
-                    !/\.html?$/i.test(href)) continue;
-                if (/\/(category|categoria|search|cart|account|login)/i.test(href)) continue;
-                let abs: string;
-                try { abs = new URL(href, baseUrl).toString(); } catch { continue; }
-                if (seen.has(abs)) continue;
-                seen.add(abs);
-                const slug = (abs.split("?")[0].split("#")[0].split("/").filter(Boolean).pop() || "")
-                  .replace(/\.html?$/i, "").replace(/-/g, " ").trim();
-                if (!slug || slug.length < 3) continue;
-                linkCards.push({ name: slug, image: null, source_url: abs });
-              }
-              if (linkCards.length > 0) {
-                cards = linkCards;
-                console.log(`[extract-product-list] Firecrawl link-fallback built ${cards.length} cards`);
-              }
-            }
-          } else {
+          if (!fcResp.ok || !fcData) {
             console.log(`[extract-product-list] Firecrawl error ${fcResp.status}: ${JSON.stringify(fcData).slice(0, 300)}`);
+            return { cards: [], totalHint: 0 };
+          }
+          const renderedHtml: string =
+            (fcData.data && (fcData.data.html || fcData.data.rawHtml)) ||
+            fcData.html || fcData.rawHtml || "";
+          const renderedLinks: string[] =
+            (fcData.data && fcData.data.links) || fcData.links || [];
+          console.log(`[extract-product-list] Firecrawl returned htmlBytes=${renderedHtml.length} links=${renderedLinks.length}`);
+
+          // Try to detect total product count from the page (e.g. "(808)")
+          let totalHint = 0;
+          const totalMatch = renderedHtml.match(/\((\d{2,})\)\s*<\/small>/i) ||
+            renderedHtml.match(/(\d+)\s*(?:prodott[io]|result|artikl)/i);
+          if (totalMatch) totalHint = parseInt(totalMatch[1], 10);
+
+          let pageCards: Card[] = [];
+          if (renderedHtml) {
+            pageCards = extractCards(renderedHtml, new URL(pageUrl));
+          }
+          // Link-based fallback
+          if (pageCards.length === 0 && renderedLinks.length > 0) {
+            for (const href of renderedLinks) {
+              if (!href || typeof href !== "string") continue;
+              if (!/\/(p|product|prodotto|prodotti|products?)\//i.test(href) &&
+                  !/\.html?$/i.test(href)) continue;
+              if (/\/(category|categoria|search|cart|account|login)/i.test(href)) continue;
+              let abs: string;
+              try { abs = new URL(href, baseUrl).toString(); } catch { continue; }
+              const slug = (abs.split("?")[0].split("#")[0].split("/").filter(Boolean).pop() || "")
+                .replace(/\.html?$/i, "").replace(/-/g, " ").trim();
+              if (!slug || slug.length < 3) continue;
+              pageCards.push({ name: slug, image: null, source_url: abs });
+            }
+          }
+          return { cards: pageCards, totalHint };
+        };
+
+        try {
+          // Scrape page 1
+          const p1 = await scrapePage(normalized);
+          let totalHint = p1.totalHint;
+          for (const c of p1.cards) {
+            if (!fcSeen.has(c.source_url)) { fcSeen.add(c.source_url); fcAllCards.push(c); }
+          }
+          console.log(`[extract-product-list] Firecrawl page 1: ${fcAllCards.length} cards (totalHint=${totalHint})`);
+
+          // If we got cards and the site was blocked (fetchBlocked), try pagination
+          if (fcAllCards.length > 0 && fetchBlocked && fcAllCards.length < max) {
+            const perPage = fcAllCards.length || 24;
+            const estimatedPages = totalHint ? Math.ceil(totalHint / perPage) : 10;
+            const maxPages = Math.min(estimatedPages, 40); // cap at 40 pages
+            // Scrape pages in batches of 3 to stay within timeout
+            const BATCH = 3;
+            for (let startPage = 2; startPage <= maxPages && fcAllCards.length < max; startPage += BATCH) {
+              const batch: Promise<{ cards: Card[]; totalHint: number }>[] = [];
+              for (let p = startPage; p < startPage + BATCH && p <= maxPages; p++) {
+                const pageUrl = new URL(normalized);
+                pageUrl.searchParams.set("p", String(p));
+                batch.push(scrapePage(pageUrl.toString()));
+              }
+              const results = await Promise.all(batch);
+              let anyNew = false;
+              for (const r of results) {
+                for (const c of r.cards) {
+                  if (!fcSeen.has(c.source_url)) { fcSeen.add(c.source_url); fcAllCards.push(c); anyNew = true; }
+                }
+              }
+              console.log(`[extract-product-list] Firecrawl pages ${startPage}-${startPage + BATCH - 1}: total ${fcAllCards.length}`);
+              if (!anyNew) break; // no new products, stop
+            }
+          }
+
+          if (fcAllCards.length > 0) {
+            cards = fcAllCards;
+            console.log(`[extract-product-list] Firecrawl total: ${cards.length} cards`);
           }
         } catch (fcErr) {
           console.log(`[extract-product-list] Firecrawl fetch failed: ${fcErr instanceof Error ? fcErr.message : fcErr}`);
