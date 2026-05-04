@@ -103,9 +103,11 @@ export default function Confirm() {
         </div>
 
         <div>
-          <h3 className="mb-2 text-sm font-semibold">
-            Ingredienti con glutine ({ingredients.length})
-          </h3>
+          {ingredients.length > 0 && (
+            <h3 className="mb-2 text-sm font-semibold">
+              Ingredienti con glutine ({ingredients.length})
+            </h3>
+          )}
           {ingredients.length === 0 ? (
             <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-4 text-center space-y-1">
               <p className="text-sm font-semibold text-primary">
