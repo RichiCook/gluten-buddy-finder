@@ -1350,7 +1350,9 @@ serve(async (req) => {
 
       // Probe pagination pages until two consecutive pages add no new products.
       // Try both ?page=N (PrestaShop) and ?p=N (Magento) param styles.
-      if (cards.length > 0 && cards.length < max) {
+      // Skip if classic pagination already covered enough pages (e.g. WooCommerce /page/N/).
+      const classicCoveredEnough = paginationUrls.length > 0 && totalAmount > 0 && cards.length >= totalAmount * 0.9;
+      if (cards.length > 0 && cards.length < max && !classicCoveredEnough) {
         for (const probeParam of ["page", "p"] as const) {
           if (cards.length >= max) break;
           // Skip if base URL already has this param set (avoids re-fetching same page)
