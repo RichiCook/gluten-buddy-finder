@@ -1129,39 +1129,42 @@ serve(async (req) => {
           if (probeUrls.length === 0) continue;
           let consecutiveEmpty = 0;
           let firstAdded = false;
-          console.log(`[extract-product-list] probing ?${probeParam}=N pages (start)`);
-          for (const pageUrl of probeUrls) {
-            if (cards.length >= max) break;
-            if (consecutiveEmpty >= 2) break;
-            try {
-              const pageResp = await fetch(pageUrl, {
-                headers: {
-                  "User-Agent": UA,
-                  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                  "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
-                  Cookie: cookieHeader,
-                },
-              });
-              if (!pageResp.ok) {
-                consecutiveEmpty++;
-                continue;
-              }
-              const pageHtml = await pageResp.text();
-              const pageCards = extractCards(pageHtml, baseUrl);
-              const before = cards.length;
-              for (const c of pageCards) {
-                if (!cards.find((x) => x.source_url === c.source_url)) {
-                  cards.push(c);
+          console.log(`[extract-product-list] probing ?${probeParam}=N pages (start, ${probeUrls.length} pages)`);
+          // Probe in parallel batches
+          let firstAdded = false;
+          let stopProbing = false;
+          for (let bi = 0; bi < probeUrls.length && !stopProbing && cards.length < max; bi += BATCH_SIZE) {
+            const batch = probeUrls.slice(bi, bi + BATCH_SIZE);
+            const results = await Promise.allSettled(
+              batch.map(pageUrl =>
+                fetch(pageUrl, {
+                  headers: {
+                    "User-Agent": effectiveUA,
+                    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                    Cookie: cookieHeader,
+                  },
+                }).then(async (r) => {
+                  if (!r.ok) return [];
+                  const h = await r.text();
+                  return extractCards(h, baseUrl);
+                })
+              )
+            );
+            let batchAdded = 0;
+            for (const r of results) {
+              if (r.status === "fulfilled") {
+                for (const c of r.value) {
+                  if (!cards.find((x) => x.source_url === c.source_url)) {
+                    cards.push(c);
+                    batchAdded++;
+                  }
                 }
               }
-              const added = cards.length - before;
-              console.log(`[extract-product-list] probe ?${probeParam}=${pageUrl.match(/[?&](?:page|p)=(\d+)/)?.[1]}: cards+${added} (total ${cards.length})`);
-              if (added === 0) consecutiveEmpty++;
-              else { consecutiveEmpty = 0; firstAdded = true; }
-            } catch (error) {
-              console.warn(`[extract-product-list] probe failed for ${pageUrl}:`, error);
-              consecutiveEmpty++;
             }
+            console.log(`[extract-product-list] probe batch ${bi / BATCH_SIZE + 1}: +${batchAdded} (total ${cards.length})`);
+            if (batchAdded > 0) firstAdded = true;
+            else if (firstAdded) stopProbing = true; // stop if a full batch adds nothing after we've seen results
           }
           // If this param style worked (added new products), don't try the other one
           if (firstAdded) break;
