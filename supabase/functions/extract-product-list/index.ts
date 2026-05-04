@@ -119,12 +119,30 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     /<a\b[^>]*\bhref=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   // Collect all anchors first for cross-referencing names when alt is empty
   const anchorsByHref = new Map<string, { images: string[]; names: string[] }>();
-  const anchorMatches: { href: string; inner: string }[] = [];
+  const anchorMatches: { href: string; inner: string; tag: string }[] = [];
   for (const m of html.matchAll(anchorImgRe)) {
     const href = m[1];
     const inner = m[2];
-    if (inner.length > 5000) continue;
-    anchorMatches.push({ href, inner });
+    const tag = m[0].slice(0, m[0].indexOf(">") + 1); // opening <a ...> tag
+
+    // For very large anchors (Shopware product-box-link style), extract name
+    // from anchor title attribute and first image, then skip normal flow
+    if (inner.length > 5000) {
+      const titleAttr = tag.match(/\btitle=["']([^"']+)["']/i);
+      if (titleAttr) {
+        const name = decodeHtml(titleAttr[1]).trim();
+        const imgM = inner.match(
+          /<img[^>]*?\b(?:data-src|data-original|data-lazy|src)=["']([^"']+\.(?:jpe?g|png|webp|gif|imgix)[^"']*)["']/i,
+        );
+        let image: string | null = null;
+        if (imgM && !/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon|loader|spinner|brand)/i.test(imgM[1])) {
+          image = decodeHtml(imgM[1]);
+        }
+        push(href, name, image);
+      }
+      continue;
+    }
+    anchorMatches.push({ href, inner, tag });
     if (!anchorsByHref.has(href)) anchorsByHref.set(href, { images: [], names: [] });
     const entry = anchorsByHref.get(href)!;
     // Collect images
@@ -170,6 +188,30 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     push(href, name, image);
   }
 
+  // Shopware-specific: <a class="product-box-link" href="..." title="Product Name">
+  // These anchors are huge (10K+) and the generic regex fails on them due to nested </a> issues.
+  const shopwareRe =
+    /<a\b[^>]*\bclass=["'][^"']*product-box-link[^"']*["'][^>]*\bhref=["']([^"']+)["'][^>]*\btitle=["']([^"']+)["'][^>]*>/gi;
+  const shopwareRe2 =
+    /<a\b[^>]*\bhref=["']([^"']+)["'][^>]*\bclass=["'][^"']*product-box-link[^"']*["'][^>]*\btitle=["']([^"']+)["'][^>]*>/gi;
+  for (const re of [shopwareRe, shopwareRe2]) {
+    for (const m of html.matchAll(re)) {
+      const href = m[1];
+      const name = decodeHtml(m[2]).trim();
+      // Try to find image near this anchor (next 3000 chars)
+      const pos = m.index! + m[0].length;
+      const slice = html.slice(pos, pos + 5000);
+      const imgM = slice.match(
+        /(?:data-src|data-original|src)=["']([^"']+\.(?:jpe?g|png|webp|gif)[^"']*)["']/i,
+      );
+      let image: string | null = null;
+      if (imgM && !/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon|loader|spinner|brand)/i.test(imgM[1])) {
+        image = decodeHtml(imgM[1]);
+      }
+      push(href, name, image);
+    }
+  }
+
   // Magento-specific fallback for the anchor without the wrapped image (image is sibling)
   const magentoRe =
     /<a[^>]+class=["'][^"']*product-item-link[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -184,7 +226,6 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     const href = m[1];
     const name = stripTags(m[2]);
     if (!name || name.length < 3) continue;
-    // Try to find a nearby image for this product in a sibling anchor
     const escapedHref = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const imgNearby = html.match(
       new RegExp(`<a[^>]*href=["']${escapedHref}["'][^>]*>[\\s\\S]*?<img[^>]+src=["']([^"']+\\.(?:jpe?g|png|webp|gif)[^"']*)["']`, "i"),
@@ -581,11 +622,17 @@ serve(async (req) => {
         let m: RegExpExecArray | null;
         while ((m = blockRe.exec(pageHtml)) !== null) {
           const block = m[0];
+          // Match anchor with href and title (any attribute order)
           const linkM = block.match(
-            /<a[^>]+class="product-box-link"[^>]*href="([^"]+)"[^>]*(?:title="([^"]+)")?/,
+            /<a\b[^>]*\bhref="([^"]+)"[^>]*\btitle="([^"]+)"[^>]*>/,
           );
-          if (!linkM) continue;
-          const href = linkM[1];
+          // Also try title before href
+          const linkM2 = !linkM ? block.match(
+            /<a\b[^>]*\btitle="([^"]+)"[^>]*\bhref="([^"]+)"[^>]*>/,
+          ) : null;
+          const href = linkM ? linkM[1] : linkM2 ? linkM2[2] : null;
+          const titleFromAttr = linkM ? linkM[2] : linkM2 ? linkM2[1] : null;
+          if (!href) continue;
           let abs: string;
           try {
             abs = new URL(href, baseUrl).toString();
@@ -595,7 +642,7 @@ serve(async (req) => {
           if (seen.has(abs)) continue;
           seen.add(abs);
 
-          let name = linkM[2] || "";
+          let name = titleFromAttr || "";
           if (!name) {
             const nameM = block.match(
               /<div class="product-name"[^>]*>([\s\S]*?)<\/div>/,
