@@ -174,7 +174,7 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     }
   }
 
-  for (const { href, inner } of anchorMatches) {
+  for (const { href, inner, tag } of anchorMatches) {
     const imgMatch = inner.match(
       /<img[^>]*?\b(?:data-src|data-original|data-lazy|src)=["']([^"']+\.(?:jpe?g|png|webp|gif)[^"']*)["'][^>]*?(?:\balt=["']([^"']*)["'])?/i,
     );
@@ -187,6 +187,11 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     if (!altName) {
       const altOnly = inner.match(/<img[^>]*\balt=["']([^"']+)["']/i);
       altName = altOnly?.[1];
+    }
+    // Try aria-label on the anchor tag (common in Woodmart/WooCommerce themes)
+    if (!altName) {
+      const ariaLabel = tag.match(/\baria-label=["']([^"']+)["']/i);
+      if (ariaLabel) altName = decodeHtml(ariaLabel[1]).trim();
     }
     const titleMatch = inner.match(/<(?:h\d|p|span|div)[^>]*>([\s\S]*?)<\/(?:h\d|p|span|div)>/i);
     let name = stripTags(altName || titleMatch?.[1] || "");
