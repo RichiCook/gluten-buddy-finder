@@ -163,6 +163,10 @@ serve(async (req) => {
                 boost: /\b(pasta|spaghet|pennett?[eai]|fusill|rigatoni|maccheroni|tagliatell|lasagn|gnocch)/i,
                 penalize: /\b(mix|preparato|preparati|farina|farine|semola)/i,
               },
+              cereali: {
+                boost: /\b(cereali|fiocch|corn\s?flakes|muesli|granola|anellin|palline|soffiett)/i,
+                penalize: /\b(pasta|spaghet|pennett?[eai]|fusill|rigatoni|maccheroni|tagliatell|lasagn|mafalda|multicereali|spaghetti)/i,
+              },
             };
             const readyRule = READY_PRODUCT_TERMS[ingNameLower] ||
               (ing.category && READY_PRODUCT_TERMS[ing.category.toLowerCase()]);
