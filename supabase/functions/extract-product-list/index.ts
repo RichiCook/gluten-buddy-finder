@@ -1304,9 +1304,10 @@ serve(async (req) => {
       }
 
       // Magento exposes the real total count in the toolbar: data-amount="N".
-      // Use it to compute the expected number of pages (assuming 24/page default
-      // for Magento, 12 for some PrestaShop themes — fall back to 24).
-      const totalAmountMatch = html.match(/data-amount=["'](\d+)["']/);
+      // WooCommerce exposes it as "Visualizzazione di X-Y di Z risultati".
+      const totalAmountMatch = html.match(/data-amount=["'](\d+)["']/) ||
+        html.match(/di\s+(\d+)\s+risultat/i) ||
+        html.match(/of\s+(\d+)\s+results/i);
       const totalAmount = totalAmountMatch ? Number(totalAmountMatch[1]) : 0;
       let expectedLastPage = 0;
       if (totalAmount > 0 && cards.length > 0) {
