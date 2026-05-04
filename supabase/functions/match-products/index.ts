@@ -83,6 +83,16 @@ serve(async (req) => {
           .split(/[\s'']+/)
           .filter((t) => t.length > 3 && !GENERIC_TERMS.has(t))
           .forEach((t) => morphVariants(t).forEach((v) => mandatorySet.add(v)));
+
+        // Sinonimi per categoria: prodotti che sono dello stesso tipo ma non
+        // contengono il termine esatto dell'ingrediente nel nome.
+        const SYNONYM_TERMS: Record<string, string[]> = {
+          cereali: ["corn flakes", "cornflakes", "fiocchi", "muesli", "granola", "anellini", "palline", "soffietti", "riso soffiato", "avena"],
+          cereale: ["corn flakes", "cornflakes", "fiocchi", "muesli", "granola", "anellini", "palline", "soffietti", "riso soffiato", "avena"],
+        };
+        const synonyms = SYNONYM_TERMS[ingNameLower] || [];
+        synonyms.forEach((s) => mandatorySet.add(s));
+
         const mandatoryTerms = Array.from(mandatorySet).filter(Boolean);
 
         // BOOST terms: search_keywords usate solo per dare punteggio extra,
