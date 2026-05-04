@@ -87,7 +87,14 @@ function extractCards(html: string, baseUrl: URL): Card[] {
       return;
     }
     const u = new URL(abs);
-    if (u.host !== baseUrl.host) return;
+    // Allow same host OR sibling subdomains (e.g. us.example.com when base is it.example.com)
+    if (u.host !== baseUrl.host) {
+      const baseParts = baseUrl.host.split(".");
+      const uParts = u.host.split(".");
+      const baseParent = baseParts.slice(1).join(".");
+      const uParent = uParts.slice(1).join(".");
+      if (!baseParent || baseParent !== uParent) return;
+    }
     if (
       /\/(cart|checkout|wishlist|account|login|register|content|orders|customer|search|brand|brands|categories?|tags?|manufacturer|cms)\b/i
         .test(u.pathname)
