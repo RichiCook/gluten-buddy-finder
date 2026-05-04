@@ -623,14 +623,16 @@ serve(async (req) => {
         let m: RegExpExecArray | null;
         while ((m = blockRe.exec(pageHtml)) !== null) {
           const block = m[0];
-          // Match anchor with product-box-link class — href and class can appear in any order
+          // Match anchor with href and title (any attribute order)
           const linkM = block.match(
             /<a\b[^>]*\bhref="([^"]+)"[^>]*\btitle="([^"]+)"[^>]*>/,
-          ) || block.match(
-            /<a\b[^>]*\btitle="([^"]+)"[^>]*\bhref="([^"]+)"[^>]*>/,
           );
-          if (!linkM) continue;
-          const href = linkM[1];
+          // Also try title before href
+          const linkM2 = !linkM ? block.match(
+            /<a\b[^>]*\btitle="([^"]+)"[^>]*\bhref="([^"]+)"[^>]*>/,
+          ) : null;
+          const href = linkM ? linkM[1] : linkM2 ? linkM2[2] : null;
+          const titleFromAttr = linkM ? linkM[2] : linkM2 ? linkM2[1] : null;
           let abs: string;
           try {
             abs = new URL(href, baseUrl).toString();
