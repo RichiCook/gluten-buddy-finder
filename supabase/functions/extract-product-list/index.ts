@@ -152,11 +152,25 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     if (imgM && !/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon|loader|spinner|brand)/i.test(imgM[1])) {
       entry.images.push(imgM[1]);
     }
-    // Collect names from headings
+    // Collect names from headings inside anchor
     const hMatch = inner.match(/<h[2-6][^>]*>([\s\S]*?)<\/h[2-6]>/i);
     if (hMatch) {
       const n = stripTags(hMatch[1]);
       if (n && n.length >= 3) entry.names.push(n);
+    }
+    // Collect names from plain-text anchors (e.g. <h3><a href="...">NAME</a></h3>)
+    // These have no images and short inner HTML that is just the product name.
+    if (!imgM && inner.length < 300 && !/<img\b/i.test(inner)) {
+      const plainName = stripTags(inner);
+      if (plainName && plainName.length >= 3 && plainName.length < 150) {
+        entry.names.push(plainName);
+      }
+    }
+    // Collect aria-label from anchor tag as name
+    const ariaLabel = tag.match(/\baria-label=["']([^"']+)["']/i);
+    if (ariaLabel) {
+      const al = decodeHtml(ariaLabel[1]).trim();
+      if (al && al.length >= 3) entry.names.push(al);
     }
   }
 
