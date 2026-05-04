@@ -288,6 +288,129 @@ serve(async (req) => {
     let cards: Card[] = extractCards(html, baseUrl);
     const ajax = extractAjaxState(html);
 
+    // ===== Shopify JSON API handler =====
+    // Shopify search pages only return ~250 products max via HTML pagination.
+    // Detect Shopify and use the JSON products API for collections, or the
+    // search results JSON for search pages to get all products.
+    const isShopify = /cdn\.shopify\.com/i.test(html) || /shopify-section/i.test(html.slice(0, 5000));
+    if (isShopify) {
+      const searchQuery = baseUrl.searchParams.get("q") || "";
+      // Try to find a collection handle from the URL path
+      const collectionMatch = baseUrl.pathname.match(/\/collections\/([^/?#]+)/);
+      
+      // Detect gluten-free related search and look for a matching collection
+      const normQuery = searchQuery.toLowerCase().replace(/[*+]/g, " ").replace(/\s+/g, " ").trim();
+      const isGlutenFreeSearch = /senza\s*glutine|gluten[\s-]*free/i.test(normQuery);
+      
+      let shopifyCards: Card[] = [];
+      const shopifySeen = new Set<string>();
+      
+      const addShopifyProduct = (product: any) => {
+        const handle = product.handle;
+        const prodUrl = new URL(`/products/${handle}`, baseUrl.origin).toString();
+        if (shopifySeen.has(prodUrl)) return;
+        shopifySeen.add(prodUrl);
+        let image: string | null = null;
+        if (product.images && product.images.length > 0) {
+          const img = product.images[0];
+          image = typeof img === "string" ? img : img.src || null;
+        } else if (product.image) {
+          image = typeof product.image === "string" ? product.image : product.image.src || null;
+        }
+        shopifyCards.push({
+          name: product.title || handle.replace(/-/g, " "),
+          image,
+          source_url: prodUrl,
+        });
+      };
+
+      // Strategy 1: If it's a collection page, use collection products.json
+      let collectionHandle = collectionMatch?.[1] || null;
+      // Strategy 2: For gluten-free searches, try the known collection
+      if (!collectionHandle && isGlutenFreeSearch) {
+        // Probe for common gluten-free collection handles
+        for (const tryHandle of ["gluten-free", "senza-glutine", "gluten-free-food"]) {
+          try {
+            const probe = await fetch(`${baseUrl.origin}/collections/${tryHandle}.json?page=1&limit=1`, {
+              headers: { "User-Agent": UA, Accept: "application/json" },
+            });
+            if (probe.ok) {
+              const pj = await probe.json();
+              if (pj.collection && pj.collection.products_count > 0) {
+                collectionHandle = tryHandle;
+                console.log(`[extract-product-list] Shopify: found collection "${tryHandle}" with ${pj.collection.products_count} products`);
+                break;
+              }
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      if (collectionHandle) {
+        // Fetch all products from the collection via JSON API (250 per page)
+        for (let page = 1; page <= 100 && shopifyCards.length < max; page++) {
+          try {
+            const jsonUrl = `${baseUrl.origin}/collections/${collectionHandle}/products.json?page=${page}&limit=250`;
+            const jr = await fetch(jsonUrl, {
+              headers: { "User-Agent": UA, Accept: "application/json" },
+            });
+            if (!jr.ok) break;
+            const jd = await jr.json();
+            const products = jd.products || [];
+            if (products.length === 0) break;
+            for (const p of products) addShopifyProduct(p);
+            console.log(`[extract-product-list] Shopify collection page ${page}: +${products.length} (total ${shopifyCards.length})`);
+            if (products.length < 250) break; // last page
+          } catch { break; }
+        }
+      } else if (searchQuery) {
+        // For search without a collection, use Shopify search with JSON
+        // Shopify search is limited to ~250 results, but it's better than HTML scraping
+        for (let page = 1; page <= 50 && shopifyCards.length < max; page++) {
+          try {
+            const searchUrl = `${baseUrl.origin}/search?type=product&q=${encodeURIComponent(searchQuery)}&page=${page}&view=json`;
+            const sr = await fetch(searchUrl, {
+              headers: { "User-Agent": UA, Accept: "text/html,application/json" },
+            });
+            if (!sr.ok) break;
+            const text = await sr.text();
+            // Try to parse as JSON first
+            try {
+              const sj = JSON.parse(text);
+              const products = sj.products || sj.results || [];
+              if (products.length === 0) break;
+              for (const p of products) addShopifyProduct(p);
+            } catch {
+              // Fall back to HTML extraction
+              const pageCards = extractCards(text, baseUrl);
+              if (pageCards.length === 0) break;
+              for (const c of pageCards) {
+                if (!shopifySeen.has(c.source_url)) {
+                  shopifySeen.add(c.source_url);
+                  shopifyCards.push(c);
+                }
+              }
+            }
+            if (shopifyCards.length <= page * 18 * 0.5) break; // diminishing returns
+          } catch { break; }
+        }
+      }
+
+      if (shopifyCards.length > cards.length) {
+        console.log(`[extract-product-list] Shopify JSON: ${shopifyCards.length} products (vs ${cards.length} from HTML)`);
+        const candidates = shopifyCards.slice(0, max);
+        return new Response(
+          JSON.stringify({
+            candidates,
+            total_links: candidates.length,
+            total_found_on_site: shopifyCards.length,
+            source: "shopify",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
     // ===== Esselunga (SPA pre-rendered for Googlebot) =====
     // The page returns up to 30 products. Pagination is `/ricerca/<query>/<n>`.
     // We detect products by looking for "Prodotto senza glutine" (the wheat-with-slash
