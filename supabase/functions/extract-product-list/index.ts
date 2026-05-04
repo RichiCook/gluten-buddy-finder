@@ -1410,6 +1410,60 @@ serve(async (req) => {
           if (firstAdded) break;
         }
       }
+
+      // ===== Path-based /page/N/ probing (WooCommerce / WordPress) =====
+      // If query-param probing didn't add products and we know total > found,
+      // try WooCommerce-style /page/N/ path pagination.
+      const isWooCommerce = /woocommerce/i.test(html.slice(0, 5000)) || /product_cat-/i.test(html);
+      if (cards.length > 0 && cards.length < max && (isWooCommerce || expectedLastPage > 1)) {
+        // Check if /page/N/ was already covered by classic pagination
+        const alreadyHasPathPages = paginationUrls.some(u => /\/page\/\d+\//i.test(u));
+        if (!alreadyHasPathPages) {
+          const pathUpTo = Math.min(200, Math.max(expectedLastPage || 0, 150));
+          if (pathUpTo > 1) {
+            console.log(`[extract-product-list] probing /page/N/ path pagination (up to ${pathUpTo})`);
+            let pathFirstAdded = false;
+            let pathStopProbing = false;
+            for (let bi = 2; bi <= pathUpTo && !pathStopProbing && cards.length < max; bi += BATCH_SIZE) {
+              const batch: string[] = [];
+              for (let p = bi; p < bi + BATCH_SIZE && p <= pathUpTo; p++) {
+                const cleanPath = baseUrl.pathname.replace(/\/page\/\d+\/?$/, "").replace(/\/$/, "");
+                batch.push(new URL(`${cleanPath}/page/${p}/`, baseUrl.origin).toString());
+              }
+              const results = await Promise.allSettled(
+                batch.map(pageUrl =>
+                  fetch(pageUrl, {
+                    headers: {
+                      "User-Agent": effectiveUA,
+                      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                      "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                      Cookie: cookieHeader,
+                    },
+                  }).then(async (r) => {
+                    if (!r.ok) return [];
+                    const h = await r.text();
+                    return extractCards(h, baseUrl);
+                  })
+                )
+              );
+              let batchAdded = 0;
+              for (const r of results) {
+                if (r.status === "fulfilled") {
+                  for (const c of r.value) {
+                    if (!cards.find((x) => x.source_url === c.source_url)) {
+                      cards.push(c);
+                      batchAdded++;
+                    }
+                  }
+                }
+              }
+              console.log(`[extract-product-list] path probe batch ${Math.floor((bi - 2) / BATCH_SIZE) + 1}: +${batchAdded} (total ${cards.length})`);
+              if (batchAdded > 0) pathFirstAdded = true;
+              else if (pathFirstAdded) pathStopProbing = true;
+            }
+          }
+        }
+      }
     }
 
     // ===== Firecrawl fallback for SPA / JS-rendered sites =====
