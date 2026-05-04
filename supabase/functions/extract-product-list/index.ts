@@ -633,6 +633,7 @@ serve(async (req) => {
           ) : null;
           const href = linkM ? linkM[1] : linkM2 ? linkM2[2] : null;
           const titleFromAttr = linkM ? linkM[2] : linkM2 ? linkM2[1] : null;
+          if (!href) continue;
           let abs: string;
           try {
             abs = new URL(href, baseUrl).toString();
@@ -642,7 +643,7 @@ serve(async (req) => {
           if (seen.has(abs)) continue;
           seen.add(abs);
 
-          let name = linkM[2] || "";
+          let name = titleFromAttr || "";
           if (!name) {
             const nameM = block.match(
               /<div class="product-name"[^>]*>([\s\S]*?)<\/div>/,
