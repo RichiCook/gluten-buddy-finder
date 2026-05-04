@@ -107,9 +107,14 @@ export default function Confirm() {
             Ingredienti con glutine ({ingredients.length})
           </h3>
           {ingredients.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-              Nessun ingrediente. Aggiungine uno qui sotto.
-            </p>
+            <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-4 text-center space-y-1">
+              <p className="text-sm font-semibold text-primary">
+                ✅ Prodotto non contenente glutine
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Non sono stati rilevati ingredienti con glutine. Puoi comunque aggiungerne manualmente qui sotto.
+              </p>
+            </div>
           ) : (
             <div className="space-y-2">
               {ingredients.map((ing, i) => (
