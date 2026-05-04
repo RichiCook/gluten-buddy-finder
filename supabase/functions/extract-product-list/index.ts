@@ -1075,27 +1075,34 @@ serve(async (req) => {
         console.log(`[extract-product-list] toolbar total=${totalAmount} perPage~${perPage} expectedLastPage=${expectedLastPage}`);
       }
 
-      for (const pageUrl of paginationUrls) {
-        if (cards.length >= max) break;
-        try {
-          const pageResp = await fetch(pageUrl, {
-            headers: {
-              "User-Agent": UA,
-              Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-              "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
-              Cookie: cookieHeader,
-            },
-          });
-          if (!pageResp.ok) continue;
-          const pageHtml = await pageResp.text();
-          const pageCards = extractCards(pageHtml, baseUrl);
-          for (const c of pageCards) {
-            if (!cards.find((x) => x.source_url === c.source_url)) {
-              cards.push(c);
+      // Fetch pagination pages in parallel batches to avoid timeout
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < paginationUrls.length && cards.length < max; i += BATCH_SIZE) {
+        const batch = paginationUrls.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map(pageUrl =>
+            fetch(pageUrl, {
+              headers: {
+                "User-Agent": effectiveUA,
+                Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                Cookie: cookieHeader,
+              },
+            }).then(async (r) => {
+              if (!r.ok) return [];
+              const h = await r.text();
+              return extractCards(h, baseUrl);
+            })
+          )
+        );
+        for (const r of results) {
+          if (r.status === "fulfilled") {
+            for (const c of r.value) {
+              if (!cards.find((x) => x.source_url === c.source_url)) {
+                cards.push(c);
+              }
             }
           }
-        } catch (error) {
-          console.warn(`[extract-product-list] pagination fetch failed for ${pageUrl}:`, error);
         }
       }
 
