@@ -96,7 +96,7 @@ function extractCards(html: string, baseUrl: URL): Card[] {
       if (!baseParent || baseParent !== uParent) return;
     }
     if (
-      /\/(cart|checkout|wishlist|account|login|register|content|orders|customer|search|brand|brands|categories?|tags?|manufacturer|cms)\b/i
+      /\/(cart|checkout|wishlist|account|my-account|login|register|content|orders|customer|search|brand|brands|categories?|tags?|manufacturer|cms|chi-siamo|about|faq|contatt|farmacie|volantino|blog|magazine|assistenza|resi|spedizion|privacy|cookie|terms|condizioni)\b/i
         .test(u.pathname)
     ) return;
     if (u.pathname === baseUrl.pathname || u.pathname === "/") return;
