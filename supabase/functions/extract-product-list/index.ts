@@ -275,18 +275,24 @@ serve(async (req) => {
         "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
       },
     });
-    if (!resp.ok) throw new Error(`Fetch fallito: ${resp.status}`);
-    const html = await resp.text();
 
-    const setCookie = resp.headers.get("set-cookie") || "";
+    // If the site blocks us (403/401/etc), set empty HTML so the Firecrawl
+    // fallback further down can handle it instead of aborting everything.
+    const fetchBlocked = !resp.ok;
+    if (fetchBlocked) {
+      console.log(`[extract-product-list] Direct fetch returned ${resp.status} for ${baseUrl.host}, will try Firecrawl fallback`);
+    }
+    const html = fetchBlocked ? "" : await resp.text();
+
+    const setCookie = fetchBlocked ? "" : (resp.headers.get("set-cookie") || "");
     const cookieHeader = setCookie
       .split(/,(?=[^;]+=[^;]+)/)
       .map((c) => c.split(";")[0].trim())
       .filter(Boolean)
       .join("; ");
 
-    let cards: Card[] = extractCards(html, baseUrl);
-    const ajax = extractAjaxState(html);
+    let cards: Card[] = fetchBlocked ? [] : extractCards(html, baseUrl);
+    const ajax = fetchBlocked ? null : extractAjaxState(html);
 
     // ===== Shopify JSON API handler =====
     // Shopify search pages only return ~250 products max via HTML pagination.
