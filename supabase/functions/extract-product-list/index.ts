@@ -188,6 +188,30 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     push(href, name, image);
   }
 
+  // Shopware-specific: <a class="product-box-link" href="..." title="Product Name">
+  // These anchors are huge (10K+) and the generic regex fails on them due to nested </a> issues.
+  const shopwareRe =
+    /<a\b[^>]*\bclass=["'][^"']*product-box-link[^"']*["'][^>]*\bhref=["']([^"']+)["'][^>]*\btitle=["']([^"']+)["'][^>]*>/gi;
+  const shopwareRe2 =
+    /<a\b[^>]*\bhref=["']([^"']+)["'][^>]*\bclass=["'][^"']*product-box-link[^"']*["'][^>]*\btitle=["']([^"']+)["'][^>]*>/gi;
+  for (const re of [shopwareRe, shopwareRe2]) {
+    for (const m of html.matchAll(re)) {
+      const href = m[1];
+      const name = decodeHtml(m[2]).trim();
+      // Try to find image near this anchor (next 3000 chars)
+      const pos = m.index! + m[0].length;
+      const slice = html.slice(pos, pos + 5000);
+      const imgM = slice.match(
+        /(?:data-src|data-original|src)=["']([^"']+\.(?:jpe?g|png|webp|gif)[^"']*)["']/i,
+      );
+      let image: string | null = null;
+      if (imgM && !/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon|loader|spinner|brand)/i.test(imgM[1])) {
+        image = decodeHtml(imgM[1]);
+      }
+      push(href, name, image);
+    }
+  }
+
   // Magento-specific fallback for the anchor without the wrapped image (image is sibling)
   const magentoRe =
     /<a[^>]+class=["'][^"']*product-item-link[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -202,7 +226,6 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     const href = m[1];
     const name = stripTags(m[2]);
     if (!name || name.length < 3) continue;
-    // Try to find a nearby image for this product in a sibling anchor
     const escapedHref = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const imgNearby = html.match(
       new RegExp(`<a[^>]*href=["']${escapedHref}["'][^>]*>[\\s\\S]*?<img[^>]+src=["']([^"']+\\.(?:jpe?g|png|webp|gif)[^"']*)["']`, "i"),
