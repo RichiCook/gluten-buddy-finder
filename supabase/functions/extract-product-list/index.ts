@@ -623,8 +623,11 @@ serve(async (req) => {
         let m: RegExpExecArray | null;
         while ((m = blockRe.exec(pageHtml)) !== null) {
           const block = m[0];
+          // Match anchor with product-box-link class — href and class can appear in any order
           const linkM = block.match(
-            /<a[^>]+class="product-box-link"[^>]*href="([^"]+)"[^>]*(?:title="([^"]+)")?/,
+            /<a\b[^>]*\bhref="([^"]+)"[^>]*\btitle="([^"]+)"[^>]*>/,
+          ) || block.match(
+            /<a\b[^>]*\btitle="([^"]+)"[^>]*\bhref="([^"]+)"[^>]*>/,
           );
           if (!linkM) continue;
           const href = linkM[1];
