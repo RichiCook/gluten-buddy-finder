@@ -146,6 +146,21 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     push(m[1], stripTags(m[2]), null);
   }
 
+  // Tile-based fallback: anchors containing <h2>/<h3>/<h4> with product name (drmax, etc.)
+  const tileNameRe =
+    /<a\b[^>]*\bhref=["']([^"'#]+)["'][^>]*>[\s\S]*?<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>[\s\S]*?<\/a>/gi;
+  for (const m of html.matchAll(tileNameRe)) {
+    const href = m[1];
+    const name = stripTags(m[2]);
+    if (!name || name.length < 3) continue;
+    // Try to find a nearby image for this product in a sibling anchor
+    const escapedHref = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const imgNearby = html.match(
+      new RegExp(`<a[^>]*href=["']${escapedHref}["'][^>]*>[\\s\\S]*?<img[^>]+src=["']([^"']+\\.(?:jpe?g|png|webp|gif)[^"']*)["']`, "i"),
+    );
+    push(href, name, imgNearby?.[1] || null);
+  }
+
   return out;
 }
 
