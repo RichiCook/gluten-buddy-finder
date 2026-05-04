@@ -117,10 +117,32 @@ function extractCards(html: string, baseUrl: URL): Card[] {
   // Generic: anchor that wraps (or is followed by) an <img>. Allow large inner content for sites with long onclick handlers.
   const anchorImgRe =
     /<a\b[^>]*\bhref=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  // Collect all anchors first for cross-referencing names when alt is empty
+  const anchorsByHref = new Map<string, { images: string[]; names: string[] }>();
+  const anchorMatches: { href: string; inner: string }[] = [];
   for (const m of html.matchAll(anchorImgRe)) {
     const href = m[1];
     const inner = m[2];
     if (inner.length > 5000) continue;
+    anchorMatches.push({ href, inner });
+    if (!anchorsByHref.has(href)) anchorsByHref.set(href, { images: [], names: [] });
+    const entry = anchorsByHref.get(href)!;
+    // Collect images
+    const imgM = inner.match(
+      /<img[^>]*?\b(?:data-src|data-original|data-lazy|src)=["']([^"']+\.(?:jpe?g|png|webp|gif)[^"']*)["']/i,
+    );
+    if (imgM && !/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon|loader|spinner|brand)/i.test(imgM[1])) {
+      entry.images.push(imgM[1]);
+    }
+    // Collect names from headings
+    const hMatch = inner.match(/<h[2-6][^>]*>([\s\S]*?)<\/h[2-6]>/i);
+    if (hMatch) {
+      const n = stripTags(hMatch[1]);
+      if (n && n.length >= 3) entry.names.push(n);
+    }
+  }
+
+  for (const { href, inner } of anchorMatches) {
     const imgMatch = inner.match(
       /<img[^>]*?\b(?:data-src|data-original|data-lazy|src)=["']([^"']+\.(?:jpe?g|png|webp|gif)[^"']*)["'][^>]*?(?:\balt=["']([^"']*)["'])?/i,
     );
@@ -135,7 +157,16 @@ function extractCards(html: string, baseUrl: URL): Card[] {
       altName = altOnly?.[1];
     }
     const titleMatch = inner.match(/<(?:h\d|p|span|div)[^>]*>([\s\S]*?)<\/(?:h\d|p|span|div)>/i);
-    const name = stripTags(altName || titleMatch?.[1] || "");
+    let name = stripTags(altName || titleMatch?.[1] || "");
+
+    // If name is still empty, look for a sibling anchor with the same href that has the product name
+    if (!name || name.length < 3) {
+      const sibling = anchorsByHref.get(href);
+      if (sibling && sibling.names.length > 0) {
+        name = sibling.names[0];
+      }
+    }
+
     push(href, name, image);
   }
 
