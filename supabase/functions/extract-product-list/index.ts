@@ -152,15 +152,29 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     if (imgM && !/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon|loader|spinner|brand)/i.test(imgM[1])) {
       entry.images.push(imgM[1]);
     }
-    // Collect names from headings
+    // Collect names from headings inside anchor
     const hMatch = inner.match(/<h[2-6][^>]*>([\s\S]*?)<\/h[2-6]>/i);
     if (hMatch) {
       const n = stripTags(hMatch[1]);
       if (n && n.length >= 3) entry.names.push(n);
     }
+    // Collect names from plain-text anchors (e.g. <h3><a href="...">NAME</a></h3>)
+    // These have no images and short inner HTML that is just the product name.
+    if (!imgM && inner.length < 300 && !/<img\b/i.test(inner)) {
+      const plainName = stripTags(inner);
+      if (plainName && plainName.length >= 3 && plainName.length < 150) {
+        entry.names.push(plainName);
+      }
+    }
+    // Collect aria-label from anchor tag as name
+    const ariaLabel = tag.match(/\baria-label=["']([^"']+)["']/i);
+    if (ariaLabel) {
+      const al = decodeHtml(ariaLabel[1]).trim();
+      if (al && al.length >= 3) entry.names.push(al);
+    }
   }
 
-  for (const { href, inner } of anchorMatches) {
+  for (const { href, inner, tag } of anchorMatches) {
     const imgMatch = inner.match(
       /<img[^>]*?\b(?:data-src|data-original|data-lazy|src)=["']([^"']+\.(?:jpe?g|png|webp|gif)[^"']*)["'][^>]*?(?:\balt=["']([^"']*)["'])?/i,
     );
@@ -173,6 +187,11 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     if (!altName) {
       const altOnly = inner.match(/<img[^>]*\balt=["']([^"']+)["']/i);
       altName = altOnly?.[1];
+    }
+    // Try aria-label on the anchor tag (common in Woodmart/WooCommerce themes)
+    if (!altName) {
+      const ariaLabel = tag.match(/\baria-label=["']([^"']+)["']/i);
+      if (ariaLabel) altName = decodeHtml(ariaLabel[1]).trim();
     }
     const titleMatch = inner.match(/<(?:h\d|p|span|div)[^>]*>([\s\S]*?)<\/(?:h\d|p|span|div)>/i);
     let name = stripTags(altName || titleMatch?.[1] || "");
@@ -1285,9 +1304,10 @@ serve(async (req) => {
       }
 
       // Magento exposes the real total count in the toolbar: data-amount="N".
-      // Use it to compute the expected number of pages (assuming 24/page default
-      // for Magento, 12 for some PrestaShop themes — fall back to 24).
-      const totalAmountMatch = html.match(/data-amount=["'](\d+)["']/);
+      // WooCommerce exposes it as "Visualizzazione di X-Y di Z risultati".
+      const totalAmountMatch = html.match(/data-amount=["'](\d+)["']/) ||
+        html.match(/di\s+(\d+)\s+risultat/i) ||
+        html.match(/of\s+(\d+)\s+results/i);
       const totalAmount = totalAmountMatch ? Number(totalAmountMatch[1]) : 0;
       let expectedLastPage = 0;
       if (totalAmount > 0 && cards.length > 0) {
@@ -1330,7 +1350,9 @@ serve(async (req) => {
 
       // Probe pagination pages until two consecutive pages add no new products.
       // Try both ?page=N (PrestaShop) and ?p=N (Magento) param styles.
-      if (cards.length > 0 && cards.length < max) {
+      // Skip if classic pagination already covered enough pages (e.g. WooCommerce /page/N/).
+      const classicCoveredEnough = paginationUrls.length > 0 && totalAmount > 0 && cards.length >= totalAmount * 0.9;
+      if (cards.length > 0 && cards.length < max && !classicCoveredEnough) {
         for (const probeParam of ["page", "p"] as const) {
           if (cards.length >= max) break;
           // Skip if base URL already has this param set (avoids re-fetching same page)
@@ -1388,6 +1410,60 @@ serve(async (req) => {
           }
           // If this param style worked (added new products), don't try the other one
           if (firstAdded) break;
+        }
+      }
+
+      // ===== Path-based /page/N/ probing (WooCommerce / WordPress) =====
+      // If query-param probing didn't add products and we know total > found,
+      // try WooCommerce-style /page/N/ path pagination.
+      const isWooCommerce = /woocommerce/i.test(html.slice(0, 5000)) || /product_cat-/i.test(html);
+      if (cards.length > 0 && cards.length < max && (isWooCommerce || expectedLastPage > 1)) {
+        // Check if /page/N/ was already covered by classic pagination
+        const alreadyHasPathPages = paginationUrls.some(u => /\/page\/\d+\//i.test(u));
+        if (!alreadyHasPathPages) {
+          const pathUpTo = Math.min(200, Math.max(expectedLastPage || 0, 150));
+          if (pathUpTo > 1) {
+            console.log(`[extract-product-list] probing /page/N/ path pagination (up to ${pathUpTo})`);
+            let pathFirstAdded = false;
+            let pathStopProbing = false;
+            for (let bi = 2; bi <= pathUpTo && !pathStopProbing && cards.length < max; bi += BATCH_SIZE) {
+              const batch: string[] = [];
+              for (let p = bi; p < bi + BATCH_SIZE && p <= pathUpTo; p++) {
+                const cleanPath = baseUrl.pathname.replace(/\/page\/\d+\/?$/, "").replace(/\/$/, "");
+                batch.push(new URL(`${cleanPath}/page/${p}/`, baseUrl.origin).toString());
+              }
+              const results = await Promise.allSettled(
+                batch.map(pageUrl =>
+                  fetch(pageUrl, {
+                    headers: {
+                      "User-Agent": effectiveUA,
+                      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                      "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                      Cookie: cookieHeader,
+                    },
+                  }).then(async (r) => {
+                    if (!r.ok) return [];
+                    const h = await r.text();
+                    return extractCards(h, baseUrl);
+                  })
+                )
+              );
+              let batchAdded = 0;
+              for (const r of results) {
+                if (r.status === "fulfilled") {
+                  for (const c of r.value) {
+                    if (!cards.find((x) => x.source_url === c.source_url)) {
+                      cards.push(c);
+                      batchAdded++;
+                    }
+                  }
+                }
+              }
+              console.log(`[extract-product-list] path probe batch ${Math.floor((bi - 2) / BATCH_SIZE) + 1}: +${batchAdded} (total ${cards.length})`);
+              if (batchAdded > 0) pathFirstAdded = true;
+              else if (pathFirstAdded) pathStopProbing = true;
+            }
+          }
         }
       }
     }
