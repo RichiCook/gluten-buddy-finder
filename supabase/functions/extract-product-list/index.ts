@@ -119,12 +119,30 @@ function extractCards(html: string, baseUrl: URL): Card[] {
     /<a\b[^>]*\bhref=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   // Collect all anchors first for cross-referencing names when alt is empty
   const anchorsByHref = new Map<string, { images: string[]; names: string[] }>();
-  const anchorMatches: { href: string; inner: string }[] = [];
+  const anchorMatches: { href: string; inner: string; tag: string }[] = [];
   for (const m of html.matchAll(anchorImgRe)) {
     const href = m[1];
     const inner = m[2];
-    if (inner.length > 5000) continue;
-    anchorMatches.push({ href, inner });
+    const tag = m[0].slice(0, m[0].indexOf(">") + 1); // opening <a ...> tag
+
+    // For very large anchors (Shopware product-box-link style), extract name
+    // from anchor title attribute and first image, then skip normal flow
+    if (inner.length > 5000) {
+      const titleAttr = tag.match(/\btitle=["']([^"']+)["']/i);
+      if (titleAttr) {
+        const name = decodeHtml(titleAttr[1]).trim();
+        const imgM = inner.match(
+          /<img[^>]*?\b(?:data-src|data-original|data-lazy|src)=["']([^"']+\.(?:jpe?g|png|webp|gif|imgix)[^"']*)["']/i,
+        );
+        let image: string | null = null;
+        if (imgM && !/\/(logo|icon|placeholder|sprite|banner|menu|cashback|favicon|loader|spinner|brand)/i.test(imgM[1])) {
+          image = decodeHtml(imgM[1]);
+        }
+        push(href, name, image);
+      }
+      continue;
+    }
+    anchorMatches.push({ href, inner, tag });
     if (!anchorsByHref.has(href)) anchorsByHref.set(href, { images: [], names: [] });
     const entry = anchorsByHref.get(href)!;
     // Collect images
