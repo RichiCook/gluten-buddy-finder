@@ -1294,7 +1294,7 @@ serve(async (req) => {
         }
         loaded = loaded.concat(addedIds);
       }
-    } else {
+    } else if (!isSpaHost(baseUrl.host)) {
       const paginationUrls = extractPaginationUrls(html, baseUrl);
       if (paginationUrls.length) {
         console.log(`[extract-product-list] following classic pagination: pages=${paginationUrls.length}`);
