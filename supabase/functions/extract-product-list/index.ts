@@ -1449,7 +1449,10 @@ serve(async (req) => {
       // Skip if classic pagination already covered enough pages (e.g. WooCommerce /page/N/).
       const classicCoveredEnough = paginationUrls.length > 0 && totalAmount > 0 && cards.length >= totalAmount * 0.9;
       if (cards.length > 0 && cards.length < max && !classicCoveredEnough) {
-        for (const probeParam of ["page", "p"] as const) {
+        // Detect Magento sites and try ?p=N first (Magento uses ?p=N, PrestaShop uses ?page=N)
+        const isMagento = /catalogsearch|magento/i.test(html.slice(0, 5000)) || /\/catalogsearch\//i.test(baseUrl.pathname);
+        const probeOrder: readonly ("page" | "p")[] = isMagento ? ["p", "page"] : ["page", "p"];
+        for (const probeParam of probeOrder) {
           if (cards.length >= max) break;
           // Skip if base URL already has this param set (avoids re-fetching same page)
           if (baseUrl.searchParams.has(probeParam)) continue;
