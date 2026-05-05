@@ -30,6 +30,8 @@ function needsBotUA(host: string): boolean {
 const SPA_HOSTS = [
   "redcare.it",
   "www.redcare.it",
+  "naturasi.it",
+  "www.naturasi.it",
 ];
 
 function isSpaHost(host: string): boolean {
