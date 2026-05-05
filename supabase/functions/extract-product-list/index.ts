@@ -30,6 +30,8 @@ function needsBotUA(host: string): boolean {
 const SPA_HOSTS = [
   "redcare.it",
   "www.redcare.it",
+  "naturasi.it",
+  "www.naturasi.it",
 ];
 
 function isSpaHost(host: string): boolean {
@@ -1644,11 +1646,13 @@ serve(async (req) => {
             const maxPages = Math.min(estimatedPages, 40); // cap at 40 pages
             // Scrape pages in batches of 3 to stay within timeout
             const BATCH = 3;
+            // Detect page param: if original URL has "page" or "p" keep it, else default to "page"
+            const pageParam = new URL(normalized).searchParams.has("p") ? "p" : "page";
             for (let startPage = 2; startPage <= maxPages && fcAllCards.length < max; startPage += BATCH) {
               const batch: Promise<{ cards: Card[]; totalHint: number }>[] = [];
               for (let p = startPage; p < startPage + BATCH && p <= maxPages; p++) {
                 const pageUrl = new URL(normalized);
-                pageUrl.searchParams.set("p", String(p));
+                pageUrl.searchParams.set(pageParam, String(p));
                 batch.push(scrapePage(pageUrl.toString()));
               }
               const results = await Promise.all(batch);
