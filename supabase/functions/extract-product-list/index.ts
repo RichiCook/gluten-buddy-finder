@@ -25,6 +25,17 @@ function needsBotUA(host: string): boolean {
   return SSR_BOT_HOSTS.some((h) => host === h || host.endsWith("." + h));
 }
 
+// Hosts known to be JS-rendered SPAs where direct HTML scraping yields nothing.
+// For these, skip heavy probing and jump straight to the Firecrawl fallback.
+const SPA_HOSTS = [
+  "redcare.it",
+  "www.redcare.it",
+];
+
+function isSpaHost(host: string): boolean {
+  return SPA_HOSTS.some((h) => host === h || host.endsWith("." + h));
+}
+
 function decodeHtml(s: string): string {
   if (!s) return s;
   let out = s
@@ -397,10 +408,93 @@ serve(async (req) => {
       .filter(Boolean)
       .join("; ");
 
-    let cards: Card[] = fetchBlocked ? [] : extractCards(html, baseUrl);
-    const ajax = fetchBlocked ? null : extractAjaxState(html);
+    const forceFallback = fetchBlocked || isSpaHost(baseUrl.host);
+    let cards: Card[] = forceFallback ? [] : extractCards(html, baseUrl);
+    const ajax = forceFallback ? null : extractAjaxState(html);
 
-    // ===== Shopify JSON API handler =====
+    // ===== Redcare.it (Algolia-backed search SPA) =====
+    const isRedcare = /(^|\.)redcare\.\w+$/i.test(baseUrl.host);
+    if (isRedcare) {
+      try {
+        // Extract Algolia credentials from the page HTML (or use known defaults)
+        const appIdM = html.match(/algoliaApplicationId[\\"]+"?\s*:\s*[\\"]+"?([A-Z0-9]+)/);
+        const apiKeyM = html.match(/algoliaApiKey[\\"]+"?\s*:\s*[\\"]+"?([a-f0-9]+)/);
+        const appId = appIdM?.[1] || "58ECUELY50";
+        const apiKey = apiKeyM?.[1] || "6706777b1652b0b3d519958312d1ffa1";
+
+        // Detect locale from hostname (redcare.it -> IT_it, redcare.de -> DE_de, etc.)
+        const tldMatch = baseUrl.host.match(/\.(\w+)$/);
+        const tld = (tldMatch?.[1] || "it").toUpperCase();
+        const locale = `${tld}_${tld.toLowerCase()}`;
+        const indexName = `products_mktplc_prod_${locale}`;
+
+        const searchQuery = baseUrl.searchParams.get("q") ||
+          baseUrl.searchParams.get("query") || "senza glutine";
+
+        const algoliaUrl = `https://${appId.toLowerCase()}-dsn.algolia.net/1/indexes/${indexName}/query`;
+        const hitsPerPage = 100;
+        const rcCards: Card[] = [];
+        const rcSeen = new Set<string>();
+        let totalHits = 0;
+        let page = 0;
+        let nbPages = 1;
+
+        while (page < nbPages && rcCards.length < max) {
+          const ar = await fetch(algoliaUrl, {
+            method: "POST",
+            headers: {
+              "X-Algolia-API-Key": apiKey,
+              "X-Algolia-Application-Id": appId,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              params: `query=${encodeURIComponent(searchQuery)}&hitsPerPage=${hitsPerPage}&page=${page}`,
+            }),
+          });
+          if (!ar.ok) {
+            console.log(`[extract-product-list] Redcare Algolia error ${ar.status}`);
+            break;
+          }
+          const data = await ar.json();
+          if (page === 0) {
+            totalHits = data.nbHits || 0;
+            nbPages = Math.min(data.nbPages || 1, Math.ceil(max / hitsPerPage));
+            console.log(`[extract-product-list] Redcare Algolia: nbHits=${totalHits} nbPages=${data.nbPages} fetching=${nbPages}`);
+          }
+          for (const hit of (data.hits || [])) {
+            const deeplink = hit.deeplink;
+            if (!deeplink) continue;
+            const abs = new URL(deeplink, baseUrl.origin).toString();
+            if (rcSeen.has(abs)) continue;
+            rcSeen.add(abs);
+            rcCards.push({
+              name: hit.productName || hit.brandSearch || "",
+              image: hit.image || null,
+              source_url: abs,
+            });
+            if (rcCards.length >= max) break;
+          }
+          page++;
+        }
+
+        const candidates = rcCards.slice(0, max);
+        console.log(`[extract-product-list] Redcare: ${candidates.length} products (of ${totalHits} total)`);
+        if (candidates.length > 0) {
+          return new Response(
+            JSON.stringify({
+              candidates,
+              total_links: candidates.length,
+              total_available: totalHits,
+              source: "redcare",
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      } catch (err) {
+        console.log(`[extract-product-list] Redcare Algolia failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
     // Shopify search pages only return ~250 products max via HTML pagination.
     // Detect Shopify and use the JSON products API for collections, or the
     // search results JSON for search pages to get all products.
@@ -1283,7 +1377,7 @@ serve(async (req) => {
         }
         loaded = loaded.concat(addedIds);
       }
-    } else {
+    } else if (!isSpaHost(baseUrl.host)) {
       const paginationUrls = extractPaginationUrls(html, baseUrl);
       if (paginationUrls.length) {
         console.log(`[extract-product-list] following classic pagination: pages=${paginationUrls.length}`);
@@ -1544,7 +1638,7 @@ serve(async (req) => {
           console.log(`[extract-product-list] Firecrawl page 1: ${fcAllCards.length} cards (totalHint=${totalHint})`);
 
           // If we got cards and the site was blocked (fetchBlocked), try pagination
-          if (fcAllCards.length > 0 && fetchBlocked && fcAllCards.length < max) {
+          if (fcAllCards.length > 0 && forceFallback && fcAllCards.length < max) {
             const perPage = fcAllCards.length || 24;
             const estimatedPages = totalHint ? Math.ceil(totalHint / perPage) : 10;
             const maxPages = Math.min(estimatedPages, 40); // cap at 40 pages
