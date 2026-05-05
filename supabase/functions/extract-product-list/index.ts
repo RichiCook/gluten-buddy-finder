@@ -1460,9 +1460,9 @@ serve(async (req) => {
           // visible paginator. Magento only links to ~5 pages, but the real list
           // can have 20+ pages, so probing from p=2 would just hit duplicates.
           const startFrom = (highestSeen[probeParam] || 1) + 1;
-          // Probe up to expectedLastPage or 150 pages, whichever
-          // is larger — capped at 200 for safety.
-          const upTo = Math.min(200, Math.max(150, expectedLastPage || 0));
+          // Probe up to expectedLastPage or 30 pages, whichever
+          // is larger — capped at 50 for safety (avoids timeout on edge functions).
+          const upTo = Math.min(50, Math.max(30, expectedLastPage || 0));
           const probeUrls: string[] = [];
           for (let i = startFrom; i <= upTo; i++) {
             const u = new URL(baseUrl.toString());
