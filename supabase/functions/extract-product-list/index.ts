@@ -408,8 +408,9 @@ serve(async (req) => {
       .filter(Boolean)
       .join("; ");
 
-    let cards: Card[] = fetchBlocked ? [] : extractCards(html, baseUrl);
-    const ajax = fetchBlocked ? null : extractAjaxState(html);
+    const forceFallback = fetchBlocked || isSpaHost(baseUrl.host);
+    let cards: Card[] = forceFallback ? [] : extractCards(html, baseUrl);
+    const ajax = forceFallback ? null : extractAjaxState(html);
 
     // ===== Shopify JSON API handler =====
     // Shopify search pages only return ~250 products max via HTML pagination.
