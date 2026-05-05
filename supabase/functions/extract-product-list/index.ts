@@ -1556,7 +1556,7 @@ serve(async (req) => {
           console.log(`[extract-product-list] Firecrawl page 1: ${fcAllCards.length} cards (totalHint=${totalHint})`);
 
           // If we got cards and the site was blocked (fetchBlocked), try pagination
-          if (fcAllCards.length > 0 && fetchBlocked && fcAllCards.length < max) {
+          if (fcAllCards.length > 0 && forceFallback && fcAllCards.length < max) {
             const perPage = fcAllCards.length || 24;
             const estimatedPages = totalHint ? Math.ceil(totalHint / perPage) : 10;
             const maxPages = Math.min(estimatedPages, 40); // cap at 40 pages
