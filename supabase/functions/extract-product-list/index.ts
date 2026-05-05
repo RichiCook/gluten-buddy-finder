@@ -25,6 +25,17 @@ function needsBotUA(host: string): boolean {
   return SSR_BOT_HOSTS.some((h) => host === h || host.endsWith("." + h));
 }
 
+// Hosts known to be JS-rendered SPAs where direct HTML scraping yields nothing.
+// For these, skip heavy probing and jump straight to the Firecrawl fallback.
+const SPA_HOSTS = [
+  "redcare.it",
+  "www.redcare.it",
+];
+
+function isSpaHost(host: string): boolean {
+  return SPA_HOSTS.some((h) => host === h || host.endsWith("." + h));
+}
+
 function decodeHtml(s: string): string {
   if (!s) return s;
   let out = s
