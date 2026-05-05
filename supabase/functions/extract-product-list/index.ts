@@ -855,7 +855,7 @@ serve(async (req) => {
     // an <a class="product__link product__name" href="..."> with an <h2> name,
     // and a separate <a> wrapping the <img>. Pagination uses ?p=N.
     const isEfarma = /(^|\.)efarma\.com$/i.test(baseUrl.host) ||
-      /catalogsearch-result-index|page-products/i.test(html.slice(0, 2000));
+      (/(^|\.)efarma\./i.test(baseUrl.host) && /catalogsearch-result-index|page-products/i.test(html.slice(0, 2000)));
     if (isEfarma) {
       const seen = new Set<string>();
       const efarmaCards: Card[] = [];
@@ -1449,7 +1449,10 @@ serve(async (req) => {
       // Skip if classic pagination already covered enough pages (e.g. WooCommerce /page/N/).
       const classicCoveredEnough = paginationUrls.length > 0 && totalAmount > 0 && cards.length >= totalAmount * 0.9;
       if (cards.length > 0 && cards.length < max && !classicCoveredEnough) {
-        for (const probeParam of ["page", "p"] as const) {
+        // Detect Magento sites and try ?p=N first (Magento uses ?p=N, PrestaShop uses ?page=N)
+        const isMagento = /catalogsearch|magento/i.test(html.slice(0, 5000)) || /\/catalogsearch\//i.test(baseUrl.pathname);
+        const probeOrder: readonly ("page" | "p")[] = isMagento ? ["p", "page"] : ["page", "p"];
+        for (const probeParam of probeOrder) {
           if (cards.length >= max) break;
           // Skip if base URL already has this param set (avoids re-fetching same page)
           if (baseUrl.searchParams.has(probeParam)) continue;
@@ -1457,9 +1460,9 @@ serve(async (req) => {
           // visible paginator. Magento only links to ~5 pages, but the real list
           // can have 20+ pages, so probing from p=2 would just hit duplicates.
           const startFrom = (highestSeen[probeParam] || 1) + 1;
-          // Probe up to expectedLastPage or 150 pages, whichever
-          // is larger — capped at 200 for safety.
-          const upTo = Math.min(200, Math.max(150, expectedLastPage || 0));
+          // Probe up to expectedLastPage or 30 pages, whichever
+          // is larger — capped at 50 for safety (avoids timeout on edge functions).
+          const upTo = Math.min(50, Math.max(30, expectedLastPage || 0));
           const probeUrls: string[] = [];
           for (let i = startFrom; i <= upTo; i++) {
             const u = new URL(baseUrl.toString());
@@ -1471,6 +1474,7 @@ serve(async (req) => {
           // Probe in parallel batches
           let firstAdded = false;
           let stopProbing = false;
+          let consecutiveEmptyBatches = 0;
           for (let bi = 0; bi < probeUrls.length && !stopProbing && cards.length < max; bi += BATCH_SIZE) {
             const batch = probeUrls.slice(bi, bi + BATCH_SIZE);
             const results = await Promise.allSettled(
@@ -1501,8 +1505,12 @@ serve(async (req) => {
               }
             }
             console.log(`[extract-product-list] probe batch ${bi / BATCH_SIZE + 1}: +${batchAdded} (total ${cards.length})`);
-            if (batchAdded > 0) firstAdded = true;
-            else if (firstAdded) stopProbing = true; // stop if a full batch adds nothing after we've seen results
+            if (batchAdded > 0) { firstAdded = true; consecutiveEmptyBatches = 0; }
+            else {
+              consecutiveEmptyBatches++;
+              if (firstAdded) stopProbing = true; // stop if a full batch adds nothing after we've seen results
+              else if (consecutiveEmptyBatches >= 3) stopProbing = true; // bail out early if wrong param
+            }
           }
           // If this param style worked (added new products), don't try the other one
           if (firstAdded) break;
