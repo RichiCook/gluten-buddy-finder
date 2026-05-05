@@ -1474,6 +1474,7 @@ serve(async (req) => {
           // Probe in parallel batches
           let firstAdded = false;
           let stopProbing = false;
+          let consecutiveEmptyBatches = 0;
           for (let bi = 0; bi < probeUrls.length && !stopProbing && cards.length < max; bi += BATCH_SIZE) {
             const batch = probeUrls.slice(bi, bi + BATCH_SIZE);
             const results = await Promise.allSettled(
@@ -1504,8 +1505,12 @@ serve(async (req) => {
               }
             }
             console.log(`[extract-product-list] probe batch ${bi / BATCH_SIZE + 1}: +${batchAdded} (total ${cards.length})`);
-            if (batchAdded > 0) firstAdded = true;
-            else if (firstAdded) stopProbing = true; // stop if a full batch adds nothing after we've seen results
+            if (batchAdded > 0) { firstAdded = true; consecutiveEmptyBatches = 0; }
+            else {
+              consecutiveEmptyBatches++;
+              if (firstAdded) stopProbing = true; // stop if a full batch adds nothing after we've seen results
+              else if (consecutiveEmptyBatches >= 3) stopProbing = true; // bail out early if wrong param
+            }
           }
           // If this param style worked (added new products), don't try the other one
           if (firstAdded) break;
