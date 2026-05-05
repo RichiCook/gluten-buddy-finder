@@ -855,7 +855,7 @@ serve(async (req) => {
     // an <a class="product__link product__name" href="..."> with an <h2> name,
     // and a separate <a> wrapping the <img>. Pagination uses ?p=N.
     const isEfarma = /(^|\.)efarma\.com$/i.test(baseUrl.host) ||
-      /catalogsearch-result-index|page-products/i.test(html.slice(0, 2000));
+      (/(^|\.)efarma\./i.test(baseUrl.host) && /catalogsearch-result-index|page-products/i.test(html.slice(0, 2000)));
     if (isEfarma) {
       const seen = new Set<string>();
       const efarmaCards: Card[] = [];
