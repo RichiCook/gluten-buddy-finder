@@ -387,23 +387,30 @@ serve(async (req) => {
     const useBotUA = needsBotUA(baseUrl.host);
     const effectiveUA = useBotUA ? GOOGLEBOT_UA : UA;
 
-    const resp = await fetch(normalized, {
-      headers: {
-        "User-Agent": effectiveUA,
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
-      },
-    });
+    let fetchBlocked = false;
+    let html = "";
+    let setCookie = "";
+    try {
+      const resp = await fetch(normalized, {
+        headers: {
+          "User-Agent": effectiveUA,
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+        },
+      });
 
-    // If the site blocks us (403/401/etc), set empty HTML so the Firecrawl
-    // fallback further down can handle it instead of aborting everything.
-    const fetchBlocked = !resp.ok;
-    if (fetchBlocked) {
-      console.log(`[extract-product-list] Direct fetch returned ${resp.status} for ${baseUrl.host}, will try Firecrawl fallback`);
+      fetchBlocked = !resp.ok;
+      if (fetchBlocked) {
+        console.log(`[extract-product-list] Direct fetch returned ${resp.status} for ${baseUrl.host}, will try Firecrawl fallback`);
+      } else {
+        html = await resp.text();
+        setCookie = resp.headers.get("set-cookie") || "";
+      }
+    } catch (fetchErr) {
+      console.log(`[extract-product-list] Direct fetch failed for ${baseUrl.host}: ${fetchErr}, will try Firecrawl fallback`);
+      fetchBlocked = true;
     }
-    const html = fetchBlocked ? "" : await resp.text();
 
-    const setCookie = fetchBlocked ? "" : (resp.headers.get("set-cookie") || "");
     const cookieHeader = setCookie
       .split(/,(?=[^;]+=[^;]+)/)
       .map((c) => c.split(";")[0].trim())
