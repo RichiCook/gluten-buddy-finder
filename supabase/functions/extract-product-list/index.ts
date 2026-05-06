@@ -389,6 +389,7 @@ serve(async (req) => {
 
     let fetchBlocked = false;
     let html = "";
+    let setCookie = "";
     try {
       const resp = await fetch(normalized, {
         headers: {
@@ -398,20 +399,18 @@ serve(async (req) => {
         },
       });
 
-      // If the site blocks us (403/401/etc), set empty HTML so the Firecrawl
-      // fallback further down can handle it instead of aborting everything.
       fetchBlocked = !resp.ok;
       if (fetchBlocked) {
         console.log(`[extract-product-list] Direct fetch returned ${resp.status} for ${baseUrl.host}, will try Firecrawl fallback`);
       } else {
         html = await resp.text();
+        setCookie = resp.headers.get("set-cookie") || "";
       }
     } catch (fetchErr) {
       console.log(`[extract-product-list] Direct fetch failed for ${baseUrl.host}: ${fetchErr}, will try Firecrawl fallback`);
       fetchBlocked = true;
     }
 
-    const setCookie = fetchBlocked ? "" : (resp.headers.get("set-cookie") || "");
     const cookieHeader = setCookie
       .split(/,(?=[^;]+=[^;]+)/)
       .map((c) => c.split(";")[0].trim())
