@@ -373,11 +373,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let job_id: string | undefined;
+  let supabaseAdmin: ReturnType<typeof createClient> | null = null;
+
   try {
-    const { url, max = 1000, job_id } = await req.json();
+    const body = await req.json();
+    const url = body.url;
+    const max = body.max ?? 1000;
+    job_id = body.job_id;
 
     // If job_id provided, update status to running
-    let supabaseAdmin: ReturnType<typeof createClient> | null = null;
     if (job_id) {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
