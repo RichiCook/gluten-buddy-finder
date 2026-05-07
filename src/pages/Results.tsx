@@ -8,6 +8,7 @@ import { Loader2, ShoppingCart, Star, ImageOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { trackEvent } from "@/lib/analytics";
 
 interface Product {
   id: string;
@@ -164,10 +165,11 @@ export default function Results() {
                         className="w-full bg-gradient-primary"
                         asChild
                       >
-                        <a
+                      <a
                           href={p.product_url}
                           target="_blank"
                           rel="noreferrer"
+                          onClick={() => trackEvent("product_click", { name: p.name, brand: p.brand }, p.id)}
                         >
                           <ShoppingCart className="h-3 w-3" />
                           Acquista

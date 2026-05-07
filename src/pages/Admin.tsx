@@ -18,6 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Loader2, Trash2, Wand2, Download, Edit } from "lucide-react";
+import { AnalyticsDashboard } from "@/components/AnalyticsDashboard";
 
 const CATEGORIES = [
   "pasta", "biscotti", "pane", "farina",
@@ -83,14 +84,16 @@ export default function Admin() {
 
   return (
     <AppLayout title="Admin">
-      <Tabs defaultValue="list" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs defaultValue="dashboard" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="list">Catalogo</TabsTrigger>
           <TabsTrigger value="add">Nuovo</TabsTrigger>
           <TabsTrigger value="import">Importa URL</TabsTrigger>
           <TabsTrigger value="users">Utenti</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="dashboard"><AnalyticsDashboard /></TabsContent>
         <TabsContent value="list"><ProductList /></TabsContent>
         <TabsContent value="add"><AddProduct /></TabsContent>
         <TabsContent value="import"><ImportFromUrl /></TabsContent>
