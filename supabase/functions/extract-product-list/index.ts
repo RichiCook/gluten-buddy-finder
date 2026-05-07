@@ -374,7 +374,17 @@ serve(async (req) => {
   }
 
   try {
-    const { url, max = 1000 } = await req.json();
+    const { url, max = 1000, job_id } = await req.json();
+
+    // If job_id provided, update status to running
+    let supabaseAdmin: ReturnType<typeof createClient> | null = null;
+    if (job_id) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+      await supabaseAdmin.from("import_jobs").update({ status: "running" }).eq("id", job_id);
+    }
+
     if (!url) {
       return new Response(JSON.stringify({ error: "url mancante" }), {
         status: 400,
