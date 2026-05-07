@@ -106,6 +106,7 @@ All colors MUST be HSL. */
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Right Grotesk', 'Inter', system-ui, sans-serif;
     font-feature-settings: "ss01", "cv11";
   }
 }
