@@ -14,7 +14,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['"Right Grotesk"', 'Inter', 'system-ui', 'sans-serif'],
+        sans: ['"Roboto Slab"', 'Georgia', 'serif'],
       },
       colors: {
         border: "hsl(var(--border))",
