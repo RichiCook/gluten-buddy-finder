@@ -87,6 +87,45 @@ export type Database = {
           },
         ]
       }
+      import_jobs: {
+        Row: {
+          candidates: Json | null
+          category: string
+          created_at: string
+          error_message: string | null
+          id: string
+          status: string
+          summary: Json | null
+          updated_at: string
+          url: string
+          user_id: string | null
+        }
+        Insert: {
+          candidates?: Json | null
+          category?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          status?: string
+          summary?: Json | null
+          updated_at?: string
+          url: string
+          user_id?: string | null
+        }
+        Update: {
+          candidates?: Json | null
+          category?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          status?: string
+          summary?: Json | null
+          updated_at?: string
+          url?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       products: {
         Row: {
           brand: string | null

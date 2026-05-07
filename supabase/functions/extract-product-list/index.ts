@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -372,8 +373,23 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let job_id: string | undefined;
+  let supabaseAdmin: ReturnType<typeof createClient> | null = null;
+
   try {
-    const { url, max = 1000 } = await req.json();
+    const body = await req.json();
+    const url = body.url;
+    const max = body.max ?? 1000;
+    job_id = body.job_id;
+
+    // If job_id provided, update status to running
+    if (job_id) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+      await supabaseAdmin.from("import_jobs").update({ status: "running" }).eq("id", job_id);
+    }
+
     if (!url) {
       return new Response(JSON.stringify({ error: "url mancante" }), {
         status: 400,
@@ -1707,16 +1723,36 @@ serve(async (req) => {
 
     const candidates = cards.slice(0, max);
 
+    const result = {
+      candidates,
+      total_links: candidates.length,
+      total_available: prestashopTotal ?? (ajax?.allIds ? Array.from(new Set(ajax.allIds)).length : cards.length),
+    };
+
+    // If job_id, save results to DB
+    if (job_id && supabaseAdmin) {
+      await supabaseAdmin.from("import_jobs").update({
+        status: "done",
+        candidates: result.candidates,
+        summary: { total_links: result.total_links, total_available: result.total_available },
+      }).eq("id", job_id);
+    }
+
     return new Response(
-      JSON.stringify({
-        candidates,
-        total_links: candidates.length,
-        total_available: prestashopTotal ?? (ajax?.allIds ? Array.from(new Set(ajax.allIds)).length : cards.length),
-      }),
+      JSON.stringify(result),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
     console.error("extract-product-list error:", e);
+
+    // If job_id, save error to DB
+    if (job_id && supabaseAdmin) {
+      await supabaseAdmin.from("import_jobs").update({
+        status: "error",
+        error_message: e instanceof Error ? e.message : "Unknown error",
+      }).eq("id", job_id);
+    }
+
     return new Response(
       JSON.stringify({
         error: e instanceof Error ? e.message : "Unknown error",
