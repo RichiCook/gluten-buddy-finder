@@ -245,6 +245,8 @@ function ImportFromUrl() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [defaultCategory, setDefaultCategory] = useState("altro");
   const [importSummary, setImportSummary] = useState<{ found: number; nonGf: number; duplicates: number } | null>(null);
+  const [pendingJobs, setPendingJobs] = useState<any[]>([]);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
   function normalizeInputUrl(value: string) {
     const trimmed = value.trim();
@@ -254,6 +256,112 @@ function ImportFromUrl() {
     if (/^tps?:\/\//i.test(trimmed)) return `ht${trimmed}`;
     if (/^ttps?:\/\//i.test(trimmed)) return `h${trimmed}`;
     return `https://${trimmed.replace(/^\/+/, "")}`;
+  }
+
+  // Load pending/running jobs on mount
+  useEffect(() => {
+    loadJobs();
+  }, []);
+
+  async function loadJobs() {
+    const { data } = await supabase
+      .from("import_jobs")
+      .select("*")
+      .in("status", ["pending", "running", "done", "error"])
+      .order("created_at", { ascending: false })
+      .limit(20);
+    setPendingJobs((data as any[]) || []);
+  }
+
+  // Poll for active job completion
+  useEffect(() => {
+    if (!activeJobId) return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from("import_jobs")
+        .select("*")
+        .eq("id", activeJobId)
+        .single();
+      if (!data) return;
+      if ((data as any).status === "done") {
+        clearInterval(interval);
+        setActiveJobId(null);
+        setLoading(false);
+        toast.success("Estrazione completata!");
+        processJobResults(data as any);
+        loadJobs();
+      } else if ((data as any).status === "error") {
+        clearInterval(interval);
+        setActiveJobId(null);
+        setLoading(false);
+        toast.error((data as any).error_message || "Errore nell'estrazione");
+        loadJobs();
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [activeJobId]);
+
+  async function processJobResults(job: any) {
+    let raw: any[] = job.candidates || [];
+    const initialCount = raw.length;
+    const normalizedUrl = job.url;
+
+    const inputUrlLower = normalizedUrl.toLowerCase();
+    const isSearchUrl = /[?&]q=|\/catalogsearch\/|\/search(\b|\/|\?)|\/ricerca/i.test(inputUrlLower);
+    const inputIsGfCategory =
+      !isSearchUrl &&
+      /senza[\s\-_]*glutine|gluten[\s\-]?free|\bsg\b|-sg-|\/sg\//.test(inputUrlLower);
+
+    const isGlutenFree = (c: any) => {
+      const hay = `${c?.name || ""} ${c?.description || ""} ${c?.source_url || ""}`.toLowerCase();
+      if (/con glutine|contiene glutine/.test(hay)) return false;
+      if (inputIsGfCategory) return true;
+      if (/senza[\s\-_]*glutine|gluten[\s\-]?free|\bsg\b|\bs\.g\.\b|-sg-|\/sg\//.test(hay)) return true;
+      return false;
+    };
+    const gfFiltered = raw.filter(isGlutenFree);
+    const removedNonGf = initialCount - gfFiltered.length;
+
+    const urls = gfFiltered.map((c) => c.source_url).filter(Boolean);
+    const names = gfFiltered.map((c) => (c.name || "").trim()).filter(Boolean);
+    const existing = new Set<string>();
+    const existingNames = new Set<string>();
+    if (urls.length) {
+      const { data: ex1 } = await supabase
+        .from("products")
+        .select("product_url,name")
+        .in("product_url", urls);
+      ex1?.forEach((r: any) => {
+        if (r.product_url) existing.add(r.product_url);
+        if (r.name) existingNames.add(r.name.toLowerCase().trim());
+      });
+    }
+    if (names.length) {
+      const { data: ex2 } = await supabase
+        .from("products")
+        .select("name")
+        .in("name", names);
+      ex2?.forEach((r: any) => r.name && existingNames.add(r.name.toLowerCase().trim()));
+    }
+    const deduped = gfFiltered.filter(
+      (c) =>
+        !existing.has(c.source_url) &&
+        !existingNames.has((c.name || "").toLowerCase().trim()),
+    );
+    const removedDup = gfFiltered.length - deduped.length;
+
+    setCandidates(deduped);
+    setImportSummary({ found: initialCount, nonGf: removedNonGf, duplicates: removedDup });
+    setDefaultCategory(job.category || "altro");
+
+    if (!deduped.length) {
+      toast.info("Nessun nuovo prodotto senza glutine trovato");
+    } else {
+      const parts = [`${deduped.length} candidati`];
+      if (removedNonGf > 0) parts.push(`${removedNonGf} esclusi (non SG)`);
+      if (removedDup > 0) parts.push(`${removedDup} già nel DB`);
+      toast.success(parts.join(" · "));
+    }
   }
 
   async function fetchSingle() {
@@ -276,86 +384,53 @@ function ImportFromUrl() {
     setLoading(true); setCandidates([]); setSelected(new Set()); setImportSummary(null);
     try {
       const normalizedUrl = normalizeInputUrl(url);
-      const { data, error } = await supabase.functions.invoke("extract-product-list", { body: { url: normalizedUrl } });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      let raw: any[] = data?.candidates || [];
-      const initialCount = raw.length;
 
-      // 1) Filtro: solo prodotti senza glutine
-      // Strategia:
-      // - Se l'URL di input è una RICERCA generica (es. "?q=senza+glutine",
-      //   "/catalogsearch/", "/search"), validiamo per ogni prodotto perché
-      //   i risultati possono includere articoli con glutine.
-      // - Se invece l'URL di input è una CATEGORIA dedicata al senza glutine
-      //   (lo slug contiene un marker gluten-free), ci fidiamo della categoria
-      //   ed escludiamo solo prodotti con marcatori espliciti "con glutine".
-      const inputUrlLower = normalizedUrl.toLowerCase();
-      const isSearchUrl = /[?&]q=|\/catalogsearch\/|\/search(\b|\/|\?)|\/ricerca/i.test(inputUrlLower);
-      const inputIsGfCategory =
-        !isSearchUrl &&
-        /senza[\s\-_]*glutine|gluten[\s\-]?free|\bsg\b|-sg-|\/sg\//.test(inputUrlLower);
+      // Create a job record first
+      const { data: job, error: jobError } = await supabase
+        .from("import_jobs")
+        .insert({
+          url: normalizedUrl,
+          category: defaultCategory,
+          status: "pending",
+        } as any)
+        .select()
+        .single();
+      if (jobError) throw jobError;
 
-      const isGlutenFree = (c: any) => {
-        const hay = `${c?.name || ""} ${c?.description || ""} ${c?.source_url || ""}`.toLowerCase();
-        // Esclusioni esplicite (sempre)
-        if (/con glutine|contiene glutine/.test(hay)) return false;
-        // Se la pagina di input è una categoria dedicata al senza glutine,
-        // accettiamo tutti i prodotti (eccetto quelli esclusi sopra).
-        if (inputIsGfCategory) return true;
-        // Altrimenti richiediamo un marcatore positivo sul singolo prodotto
-        if (/senza[\s\-_]*glutine|gluten[\s\-]?free|\bsg\b|\bs\.g\.\b|-sg-|\/sg\//.test(hay)) return true;
-        return false;
-      };
-      const gfFiltered = raw.filter(isGlutenFree);
-      const removedNonGf = initialCount - gfFiltered.length;
+      const jobId = (job as any).id;
+      setActiveJobId(jobId);
+      toast.info("Estrazione avviata in background. Puoi navigare liberamente!");
 
-      // 2) Dedup contro DB esistente (per product_url o nome)
-      const urls = gfFiltered.map((c) => c.source_url).filter(Boolean);
-      const names = gfFiltered.map((c) => (c.name || "").trim()).filter(Boolean);
-      const existing = new Set<string>();
-      const existingNames = new Set<string>();
-      if (urls.length) {
-        const { data: ex1 } = await supabase
-          .from("products")
-          .select("product_url,name")
-          .in("product_url", urls);
-        ex1?.forEach((r: any) => {
-          if (r.product_url) existing.add(r.product_url);
-          if (r.name) existingNames.add(r.name.toLowerCase().trim());
-        });
-      }
-      if (names.length) {
-        const { data: ex2 } = await supabase
-          .from("products")
-          .select("name")
-          .in("name", names);
-        ex2?.forEach((r: any) => r.name && existingNames.add(r.name.toLowerCase().trim()));
-      }
-      const deduped = gfFiltered.filter(
-        (c) =>
-          !existing.has(c.source_url) &&
-          !existingNames.has((c.name || "").toLowerCase().trim()),
-      );
-      const removedDup = gfFiltered.length - deduped.length;
+      // Fire and forget - the edge function will update the job
+      supabase.functions.invoke("extract-product-list", {
+        body: { url: normalizedUrl, job_id: jobId },
+      }).catch((err) => {
+        console.error("Edge function invocation error (job will be updated by server):", err);
+      });
 
-      setCandidates(deduped);
-      setImportSummary({ found: initialCount, nonGf: removedNonGf, duplicates: removedDup });
       setUrl(normalizedUrl);
-
-      if (!deduped.length) {
-        toast.info("Nessun nuovo prodotto senza glutine trovato");
-      } else {
-        const parts = [`${deduped.length} candidati`];
-        if (removedNonGf > 0) parts.push(`${removedNonGf} esclusi (non SG)`);
-        if (removedDup > 0) parts.push(`${removedDup} già nel DB`);
-        toast.success(parts.join(" · "));
-      }
     } catch (e: any) {
       toast.error(e?.message || "Errore");
-    } finally {
       setLoading(false);
     }
+  }
+
+  async function loadJobResults(job: any) {
+    if (job.status === "done") {
+      await processJobResults(job);
+    } else if (job.status === "error") {
+      toast.error(job.error_message || "Errore nell'estrazione");
+    } else {
+      // Still running, start polling
+      setActiveJobId(job.id);
+      setLoading(true);
+      toast.info("Estrazione ancora in corso…");
+    }
+  }
+
+  async function deleteJob(jobId: string) {
+    await supabase.from("import_jobs").delete().eq("id", jobId);
+    setPendingJobs((prev) => prev.filter((j) => j.id !== jobId));
   }
 
   async function saveSingle() {
@@ -422,12 +497,58 @@ function ImportFromUrl() {
                 className="flex-1 bg-gradient-primary"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                Estrai
+                {loading ? "In corso…" : "Estrai"}
               </Button>
             </div>
           </div>
         </Tabs>
       </Card>
+
+      {/* Active job indicator */}
+      {activeJobId && (
+        <Card className="flex items-center gap-3 p-3 border-primary/30 bg-primary/5">
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <div>
+            <p className="text-sm font-medium">Estrazione in corso…</p>
+            <p className="text-xs text-muted-foreground">Puoi navigare liberamente, il risultato sarà disponibile quando torni.</p>
+          </div>
+        </Card>
+      )}
+
+      {/* Pending/completed jobs */}
+      {pendingJobs.length > 0 && !candidates.length && (
+        <div className="space-y-2">
+          <p className="text-sm font-semibold">Importazioni recenti</p>
+          {pendingJobs.map((job) => (
+            <Card key={job.id} className="flex items-center gap-3 p-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{job.url}</p>
+                <p className="text-xs text-muted-foreground">
+                  {job.status === "pending" && "⏳ In attesa…"}
+                  {job.status === "running" && "🔄 In corso…"}
+                  {job.status === "done" && `✅ Completato · ${(job.candidates || []).length} prodotti trovati`}
+                  {job.status === "error" && `❌ Errore: ${job.error_message || "sconosciuto"}`}
+                </p>
+              </div>
+              <div className="flex gap-1">
+                {job.status === "done" && (
+                  <Button size="sm" variant="outline" onClick={() => loadJobResults(job)}>
+                    Visualizza
+                  </Button>
+                )}
+                {(job.status === "pending" || job.status === "running") && (
+                  <Button size="sm" variant="outline" onClick={() => loadJobResults(job)}>
+                    Segui
+                  </Button>
+                )}
+                <Button size="icon" variant="ghost" onClick={() => deleteJob(job.id)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {single && (
         <Card className="space-y-3 p-3">
