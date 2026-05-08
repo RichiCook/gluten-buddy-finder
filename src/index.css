@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Gluten Baby design system — palette verde natura + crema, friendly e mobile-first.
+/* Gluten Baby design system — palette marrone natura + crema, friendly e mobile-first.
 All colors MUST be HSL. */
 
 @layer base {
@@ -16,9 +16,9 @@ All colors MUST be HSL. */
     --popover: 0 0% 100%;
     --popover-foreground: 140 30% 12%;
 
-    --primary: 142 50% 36%;
+    --primary: 25 40% 25%;
     --primary-foreground: 44 50% 97%;
-    --primary-glow: 142 60% 48%;
+    --primary-glow: 25 50% 35%;
 
     --secondary: 38 60% 92%;
     --secondary-foreground: 140 30% 18%;
@@ -34,7 +34,7 @@ All colors MUST be HSL. */
 
     --border: 44 25% 86%;
     --input: 44 25% 88%;
-    --ring: 142 50% 36%;
+    --ring: 25 40% 25%;
 
     --radius: 1rem;
 
@@ -45,12 +45,12 @@ All colors MUST be HSL. */
 
     --sidebar-background: 44 50% 97%;
     --sidebar-foreground: 140 30% 12%;
-    --sidebar-primary: 142 50% 36%;
+    --sidebar-primary: 25 40% 25%;
     --sidebar-primary-foreground: 44 50% 97%;
     --sidebar-accent: 44 30% 93%;
     --sidebar-accent-foreground: 140 30% 18%;
     --sidebar-border: 44 25% 86%;
-    --sidebar-ring: 142 50% 36%;
+    --sidebar-ring: 25 40% 25%;
   }
 
   .dark {
@@ -63,9 +63,9 @@ All colors MUST be HSL. */
     --popover: 140 20% 10%;
     --popover-foreground: 44 30% 95%;
 
-    --primary: 142 55% 50%;
+    --primary: 25 45% 40%;
     --primary-foreground: 140 30% 8%;
-    --primary-glow: 142 65% 60%;
+    --primary-glow: 25 55% 50%;
 
     --secondary: 140 15% 16%;
     --secondary-foreground: 44 30% 95%;
@@ -81,7 +81,9 @@ All colors MUST be HSL. */
 
     --border: 140 15% 18%;
     --input: 140 15% 18%;
-    --ring: 142 55% 50%;
+    --ring: 25 45% 40%;
+
+    --radius: 1rem;
 
     --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
     --gradient-warm: linear-gradient(135deg, hsl(140 20% 12%), hsl(140 20% 8%));
@@ -90,12 +92,12 @@ All colors MUST be HSL. */
 
     --sidebar-background: 140 20% 8%;
     --sidebar-foreground: 44 30% 95%;
-    --sidebar-primary: 142 55% 50%;
+    --sidebar-primary: 25 45% 40%;
     --sidebar-primary-foreground: 140 30% 8%;
     --sidebar-accent: 140 15% 16%;
     --sidebar-accent-foreground: 44 30% 95%;
     --sidebar-border: 140 15% 18%;
-    --sidebar-ring: 142 55% 50%;
+    --sidebar-ring: 25 45% 40%;
   }
 }
 
