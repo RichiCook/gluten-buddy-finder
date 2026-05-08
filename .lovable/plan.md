@@ -1,19 +1,41 @@
-## Obiettivo
 
-Usare l'immagine del topolino caricata (`Harvest_Mouse.-Wiki-Commons.jpg`) come simbolo/logo dell'app, sostituendo il logo attuale.
+# App Nativa con Capacitor
 
-## Modifiche
+## Cosa faremo nel progetto Lovable
 
-1. **Copia dell'immagine**
-   - Copiare `user-uploads://Harvest_Mouse.-Wiki-Commons.jpg` in `src/assets/logo.png` (sovrascrivendo il logo attuale).
-   - Così tutti i punti del codice che già importano `@/assets/logo.png` (header in `src/components/AppLayout.tsx`) prendono automaticamente il nuovo simbolo, senza altre modifiche al codice.
+1. **Installare le dipendenze Capacitor**: `@capacitor/core`, `@capacitor/cli`, `@capacitor/ios`, `@capacitor/android`
+2. **Inizializzare Capacitor** con `npx cap init` e configurare `capacitor.config.ts` con:
+   - App ID: `app.lovable.0a9c44974df2491eb68234391186be63`
+   - App Name: `gluten-buddy-finder`
+   - Hot-reload dal sandbox Lovable per sviluppo
 
-2. **Favicon del browser**
-   - Generare una versione quadrata 256×256 dell'immagine del topolino e salvarla come `public/favicon.ico`, in modo che anche la tab del browser mostri il nuovo simbolo.
+## Cosa dovrai fare tu sul tuo computer
 
-3. **Verifica**
-   - Nessuna modifica di logica o componenti React. Il logo nell'header resterà visualizzato come `h-9 w-9` (cerchio piccolo) — l'immagine verrà ritagliata centralmente per restare leggibile a quella dimensione.
+Dopo che avrò configurato il progetto, dovrai:
 
-## Nota
+1. **Esportare su GitHub** tramite il pulsante "Export to GitHub" in Lovable
+2. **Clonare il repo** sul tuo Mac (serve un Mac per iOS/App Store)
+3. Eseguire questi comandi:
+   ```
+   npm install
+   npx cap add ios
+   npx cap update ios
+   npm run build
+   npx cap sync
+   npx cap open ios
+   ```
+4. In **Xcode**: configurare il team di firma (serve un account Apple Developer, costa 99€/anno), impostare bundle ID, icone e splash screen
+5. **Archiviare e caricare** su App Store Connect tramite Xcode
+6. Compilare le informazioni richieste su [App Store Connect](https://appstoreconnect.apple.com): descrizione, screenshot, categoria, privacy policy
 
-L'immagine originale è una foto naturale (sfondo verde sfocato). A quella dimensione (36×36 px nell'header) si vedrà il topolino ma con un piccolo bordo verde. Se in futuro vorrai un logo "pulito" con sfondo trasparente o stilizzato (icona vettoriale), posso generarne una versione dedicata: fammi sapere se preferisci procedere così oppure se vuoi prima una versione ritagliata/stilizzata.
+## Requisiti
+
+- **Mac con Xcode** installato (ultima versione)
+- **Account Apple Developer** (99€/anno) — [developer.apple.com](https://developer.apple.com)
+- Per Google Play: Android Studio + account Google Play Console (25$ una tantum)
+
+## Note
+
+- Le modifiche al codice dell'app continueranno a essere fatte in Lovable
+- Dopo ogni aggiornamento, basta fare `git pull` + `npx cap sync` + rebuild in Xcode
+- Consiglio di leggere anche la guida Lovable: [Self-hosting e Capacitor](https://docs.lovable.dev/tips-tricks/self-hosting)
