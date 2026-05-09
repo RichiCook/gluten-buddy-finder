@@ -173,11 +173,27 @@ serve(async (req) => {
                 boost: /\b(pasta|spaghet|pennett?[eai]|fusill|rigatoni|maccheroni|tagliatell|lasagn|gnocch)/i,
                 penalize: /\b(mix|preparato|preparati|farina|farine|semola)/i,
               },
-              cereali: {
-                boost: /\b(cereali|fiocch|corn\s?flakes|muesli|granola|anellin|palline|soffiett)/i,
-                penalize: /\b(pasta|spaghet|pennett?[eai]|fusill|rigatoni|maccheroni|tagliatell|lasagn|mafalda|multicereali|spaghetti)/i,
-              },
-            };
+            cereali: {
+              boost: /\b(cereali|fiocch|corn\s?flakes|muesli|granola|anellin|palline|soffiett)/i,
+              penalize: /\b(pasta|spaghet|pennett?[eai]|fusill|rigatoni|maccheroni|tagliatell|lasagn|mafalda|multicereali|spaghetti)/i,
+            },
+            cacao: {
+              boost: /^(cacao|cocoa)\b|\bcacao\s+(amaro|in\s+polvere|dolce|puro|magro)\b|\bpolvere\s+di\s+cacao\b/i,
+              penalize: /\b(biscott|merendin|snack|frollin|wafer|barrett|cioccolat|crema|torta|brioche|plumcake|muffin|cereali|fiocch)/i,
+            },
+            mascarpone: {
+              boost: /^mascarpone\b|\bmascarpone\b(?!.*(tiramis|torta|crema\s+di|biscott|dolce|dessert))/i,
+              penalize: /\b(tiramis|torta|biscott|merendin|dessert|crema\s+di\s+mascarpone)/i,
+            },
+            caffè: {
+              boost: /^caff[eè]\b|\bcaff[eè]\s+(macinato|in\s+grani|solubile|moka|espresso)\b/i,
+              penalize: /\b(biscott|merendin|snack|crema|torta|gelato|cioccolat|tiramis|wafer)/i,
+            },
+            caffe: {
+              boost: /^caff[eè]\b|\bcaff[eè]\s+(macinato|in\s+grani|solubile|moka|espresso)\b/i,
+              penalize: /\b(biscott|merendin|snack|crema|torta|gelato|cioccolat|tiramis|wafer)/i,
+            },
+          };
             const readyRule = READY_PRODUCT_TERMS[ingNameLower] ||
               (ing.category && READY_PRODUCT_TERMS[ing.category.toLowerCase()]);
             if (readyRule) {
