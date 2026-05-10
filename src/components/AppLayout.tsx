@@ -1,11 +1,15 @@
 import { ReactNode } from "react";
 import { BottomNav } from "./BottomNav";
+import appBackground from "@/assets/app-background.jpeg";
 
 import { Link } from "react-router-dom";
 
 export function AppLayout({ children, title }: { children: ReactNode; title?: string }) {
   return (
-    <div className="min-h-screen bg-gradient-warm pb-24">
+    <div
+      className="min-h-screen pb-24 bg-fixed bg-no-repeat bg-center bg-cover"
+      style={{ backgroundImage: `url(${appBackground})` }}
+    >
       <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-lg items-center gap-3 px-4 py-3">
           <Link to="/" className="flex items-center gap-2">
