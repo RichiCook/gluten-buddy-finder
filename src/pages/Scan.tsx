@@ -65,7 +65,7 @@ export default function Scan() {
           </p>
         </div>
 
-        <Card className="mx-auto max-w-xs overflow-hidden border-2 border-dashed border-primary/30 bg-card p-4 shadow-soft">
+        <Card className="mx-auto max-w-xs overflow-hidden border-2 border-dashed border-primary/30 bg-card/70 backdrop-blur-sm p-4 shadow-soft">
           {preview ? (
             <img
               src={preview}
