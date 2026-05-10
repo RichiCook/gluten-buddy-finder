@@ -65,19 +65,19 @@ export default function Scan() {
           </p>
         </div>
 
-        <Card className="overflow-hidden border-2 border-dashed border-primary/30 bg-card p-6 shadow-soft">
+        <Card className="mx-auto max-w-xs overflow-hidden border-2 border-dashed border-primary/30 bg-card p-4 shadow-soft">
           {preview ? (
             <img
               src={preview}
               alt="anteprima"
-              className="mx-auto max-h-64 rounded-lg object-contain"
+              className="mx-auto max-h-48 rounded-lg object-contain"
             />
           ) : (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <div className="mb-4 rounded-full bg-gradient-primary p-5 shadow-glow">
-                <Sparkles className="h-8 w-8 text-primary-foreground" />
+            <div className="flex flex-col items-center justify-center py-4 text-center">
+              <div className="mb-3 rounded-full bg-gradient-primary p-4 shadow-glow">
+                <Sparkles className="h-6 w-6 text-primary-foreground" />
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Pronto a scansionare il tuo prossimo pasto?
               </p>
             </div>
