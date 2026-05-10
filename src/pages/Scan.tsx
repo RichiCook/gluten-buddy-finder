@@ -84,10 +84,10 @@ export default function Scan() {
           )}
         </Card>
 
-        <div className="grid grid-cols-1 gap-3">
+        <div className="mx-auto grid max-w-xs grid-cols-1 gap-3">
           <Button
             size="lg"
-            className="h-14 text-base bg-gradient-primary shadow-glow"
+            className="h-12 text-base bg-gradient-primary shadow-glow"
             disabled={loading}
             onClick={() => cameraInput.current?.click()}
           >
@@ -103,7 +103,7 @@ export default function Scan() {
           <Button
             size="lg"
             variant="outline"
-            className="h-14 text-base"
+            className="h-12 text-base bg-background/70 backdrop-blur-sm"
             disabled={loading}
             onClick={() => fileInput.current?.click()}
           >
