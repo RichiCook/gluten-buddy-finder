@@ -8,7 +8,7 @@ export function AppLayout({ children, title }: { children: ReactNode; title?: st
   return (
     <div className="relative min-h-screen pb-24">
       <div
-        className="fixed inset-0 -z-10 bg-no-repeat bg-center bg-cover"
+        className="fixed inset-0 -z-10 bg-no-repeat bg-center bg-contain bg-background"
         style={{ backgroundImage: `url(${appBackground})` }}
       />
       <header className="sticky top-0 z-30 border-b border-border/50 bg-transparent backdrop-blur-md">
