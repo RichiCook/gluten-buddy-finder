@@ -95,6 +95,19 @@ serve(async (req) => {
 
         const mandatoryTerms = Array.from(mandatorySet).filter(Boolean);
 
+        // VISUAL traits: tratti visivi/formato dal riconoscimento immagine
+        // (es. "frollini", "gocce di cioccolato", "cacao", "stelline").
+        // Ammettono prodotti (matching estetico) e danno forte boost al punteggio.
+        const visualSet = new Set<string>();
+        ((ing as any).visual_traits || []).forEach((t: string) => {
+          const tt = t?.toLowerCase().trim();
+          if (tt && tt.length > 2) {
+            visualSet.add(tt);
+            morphVariants(tt).forEach((v) => visualSet.add(v));
+          }
+        });
+        const visualTerms = Array.from(visualSet).filter(Boolean);
+
         // BOOST terms: search_keywords usate solo per dare punteggio extra,
         // non per ammettere prodotti.
         const boostSet = new Set<string>();
@@ -107,8 +120,12 @@ serve(async (req) => {
         const boostTerms = Array.from(boostSet).filter(Boolean);
 
         // Per la query iniziale recuperiamo candidati che matchano i termini
-        // obbligatori (per ingredienti generici come "pasta" usiamo il termine stesso).
-        const queryTerms = mandatoryTerms.length > 0 ? mandatoryTerms : [ingNameLower];
+        // obbligatori O i tratti visivi (così se l'ingrediente è "biscotti" generico
+        // ma ha visual_traits ["frollini","gocce di cioccolato"], troviamo i frollini).
+        const queryTerms = Array.from(new Set([
+          ...(mandatoryTerms.length > 0 ? mandatoryTerms : [ingNameLower]),
+          ...visualTerms,
+        ]));
         const orFilters = queryTerms.flatMap((k) => [
           `name.ilike.%${k}%`,
           `brand.ilike.%${k}%`,
@@ -120,14 +137,13 @@ serve(async (req) => {
             .from("products")
             .select("*")
             .or(orFilters)
-            .limit(80);
+            .limit(120);
           if (error) console.error("keyword query error", error);
           else candidates = data || [];
         }
 
-        // Filtro stretto: il prodotto DEVE contenere il NOME dell'ingrediente
-        // (o una sua variante morfologica) nel name. Brand match conta solo se
-        // il nome contiene anche il termine.
+        // Filtro: il prodotto DEVE contenere il NOME dell'ingrediente
+        // OPPURE almeno un visual trait (per matching estetico/formato).
         const ranked = candidates
           .map((p) => {
             const nameLower = (p.name || "").toLowerCase();
@@ -140,13 +156,30 @@ serve(async (req) => {
             }
             // Per ingredienti generici (es. "pasta") accettiamo anche match nel brand
             if (!mandatoryHit && isGenericIngredient) {
-              for (const kw of queryTerms) {
+              for (const kw of mandatoryTerms.length ? mandatoryTerms : [ingNameLower]) {
                 if (nameLower.includes(kw) || brandLower.includes(kw)) {
-                  score += 8;
+                  score += 6;
                   mandatoryHit = true;
                 }
               }
             }
+            // Visual traits: ognuno che combacia dà un grosso boost
+            let visualHits = 0;
+            for (const vt of visualTerms) {
+              if (nameLower.includes(vt)) {
+                visualHits++;
+                score += 6;
+              }
+            }
+            // I visual traits possono ammettere il prodotto da soli (matching estetico)
+            if (!mandatoryHit && visualHits > 0) {
+              mandatoryHit = true;
+              score += 4;
+            }
+            // Combinazione di più tratti visivi = somiglianza forte
+            if (visualHits >= 2) score += 5;
+            if (visualHits >= 3) score += 5;
+
             // Boost terms aggiungono punti solo se già c'è un mandatory hit
             if (mandatoryHit) {
               for (const kw of boostTerms) {
