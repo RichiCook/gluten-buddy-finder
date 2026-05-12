@@ -390,6 +390,19 @@ serve(async (req) => {
       await supabaseAdmin.from("import_jobs").update({ status: "running" }).eq("id", job_id);
     }
 
+    const finalize = async (result: { candidates: any[]; total_links: number; total_available?: number; source?: string }) => {
+      if (job_id && supabaseAdmin) {
+        await supabaseAdmin.from("import_jobs").update({
+          status: "done",
+          candidates: result.candidates,
+          summary: { total_links: result.total_links, total_available: result.total_available ?? result.total_links },
+        }).eq("id", job_id);
+      }
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    };
+
     if (!url) {
       return new Response(JSON.stringify({ error: "url mancante" }), {
         status: 400,
