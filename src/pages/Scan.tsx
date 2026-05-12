@@ -65,7 +65,7 @@ export default function Scan() {
           </p>
         </div>
 
-        <Card className="mx-auto max-w-xs overflow-hidden border-2 border-dashed border-primary/30 bg-card/40 backdrop-blur-sm p-4 shadow-soft">
+        <Card className="mx-auto max-w-xs overflow-hidden border-2 border-dashed border-primary/30 bg-card/10 backdrop-blur-[2px] p-4 shadow-soft">
           {preview ? (
             <img
               src={preview}
@@ -103,7 +103,7 @@ export default function Scan() {
           <Button
             size="lg"
             variant="outline"
-            className="h-12 text-base bg-background/40 backdrop-blur-sm"
+            className="h-12 text-base bg-background/10 backdrop-blur-[2px]"
             disabled={loading}
             onClick={() => fileInput.current?.click()}
           >
