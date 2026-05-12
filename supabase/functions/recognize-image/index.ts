@@ -27,6 +27,13 @@ REGOLE:
 
 3. Non includere ingredienti banali (acqua, sale, olio, pepe, zucchero).
 
+4. SOMIGLIANZA VISIVA: per OGNI ingrediente devi ANCHE descrivere le caratteristiche visive/formato del prodotto fotografato, in modo da poter trovare alternative senza glutine simili nell'aspetto. Esempi:
+   - Foto di "Gocciole" Pavesi → visual_traits: ["gocce di cioccolato","gocce cioccolato","frollini","frollino","cioccolato","chocolate chips"]
+   - Foto di "Pan di Stelle" Mulino Bianco → visual_traits: ["cacao","cocoa","nocciole","frollini","frollino","stelline","cioccolato"]
+   - Foto di "Oro Saiwa" → visual_traits: ["frollini","frollino","classici","tondi"]
+   - Foto di "Plumcake" → visual_traits: ["plumcake","soffice","merendina"]
+   Usa parole italiane brevi (1-3 per trait), descrivi ingredienti visibili (gocce, cacao, nocciole, miele), forma (frollini, wafer, fette, tondi, stelle), tipologia (merendine, snack, biscotti secchi).
+
 Rispondi SEMPRE chiamando lo strumento "report_food" con:
 - dish_name: nome leggibile in italiano
 - kind: "product" se prodotto singolo, "dish" se piatto composto
@@ -34,6 +41,7 @@ Rispondi SEMPRE chiamando lo strumento "report_food" con:
    - name: nome breve in italiano
    - category: una di [pasta, biscotti, pane, farina, dolci, snack, cereali, pizza, bevande, altro]
    - search_keywords: 1-3 parole chiave per il database
+   - visual_traits: array di tratti visivi/formato per matching estetico (vedi regola 4)
    - description: breve descrizione opzionale
 
 Se non vedi alcun alimento, restituisci gluten_ingredients vuoto.`;
