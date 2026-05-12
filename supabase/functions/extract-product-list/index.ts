@@ -390,6 +390,19 @@ serve(async (req) => {
       await supabaseAdmin.from("import_jobs").update({ status: "running" }).eq("id", job_id);
     }
 
+    const finalize = async (result: { candidates: any[]; total_links: number; total_available?: number; source?: string }) => {
+      if (job_id && supabaseAdmin) {
+        await supabaseAdmin.from("import_jobs").update({
+          status: "done",
+          candidates: result.candidates,
+          summary: { total_links: result.total_links, total_available: result.total_available ?? result.total_links },
+        }).eq("id", job_id);
+      }
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    };
+
     if (!url) {
       return new Response(JSON.stringify({ error: "url mancante" }), {
         status: 400,
@@ -505,15 +518,12 @@ serve(async (req) => {
         const candidates = rcCards.slice(0, max);
         console.log(`[extract-product-list] Redcare: ${candidates.length} products (of ${totalHits} total)`);
         if (candidates.length > 0) {
-          return new Response(
-            JSON.stringify({
+          return await finalize({
               candidates,
               total_links: candidates.length,
               total_available: totalHits,
               source: "redcare",
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
+            });
         }
       } catch (err) {
         console.log(`[extract-product-list] Redcare Algolia failed: ${err instanceof Error ? err.message : err}`);
@@ -630,15 +640,12 @@ serve(async (req) => {
       if (shopifyCards.length > cards.length) {
         console.log(`[extract-product-list] Shopify JSON: ${shopifyCards.length} products (vs ${cards.length} from HTML)`);
         const candidates = shopifyCards.slice(0, max);
-        return new Response(
-          JSON.stringify({
+        return await finalize({
             candidates,
             total_links: candidates.length,
             total_found_on_site: shopifyCards.length,
             source: "shopify",
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+          });
       }
     }
 
@@ -731,15 +738,12 @@ serve(async (req) => {
 
       // Replace cards with Esselunga-specific results (skip generic + Prestashop)
       const candidates = esselungaCards.slice(0, max);
-      return new Response(
-        JSON.stringify({
+      return await finalize({
           candidates,
           total_links: candidates.length,
           total_found_on_site: declaredTotal ?? candidates.length,
           source: "esselunga",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+        });
     }
 
 
@@ -861,15 +865,12 @@ serve(async (req) => {
 
       const candidates = koroCards.slice(0, max);
       console.log(`[extract-product-list] Koro: ${candidates.length} products`);
-      return new Response(
-        JSON.stringify({
+      return await finalize({
           candidates,
           total_links: candidates.length,
           total_found_on_site: candidates.length,
           source: "koro-shop",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+        });
     }
 
 
@@ -983,15 +984,12 @@ serve(async (req) => {
       const candidates = efarmaFood.slice(0, max);
       console.log(`[extract-product-list] eFarma: ${candidates.length} products (lastPage=${lastPage}, filtered ${efBefore}->${efarmaFood.length})`);
       if (candidates.length > 0) {
-        return new Response(
-          JSON.stringify({
+        return await finalize({
             candidates,
             total_links: candidates.length,
             total_found_on_site: candidates.length,
             source: "efarma",
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+          });
       }
     }
 
@@ -1065,15 +1063,12 @@ serve(async (req) => {
         const candidates = tfCards.slice(0, max);
         console.log(`[extract-product-list] 1000farmacie: ${candidates.length} products (of ${totalHits} in Alimentazione)`);
         if (candidates.length > 0) {
-          return new Response(
-            JSON.stringify({
+          return await finalize({
               candidates,
               total_links: candidates.length,
               total_available: totalHits,
               source: "1000farmacie",
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
+            });
         }
       } catch (err) {
         console.log(`[extract-product-list] 1000farmacie Algolia failed: ${err instanceof Error ? err.message : err}`);
@@ -1139,15 +1134,12 @@ serve(async (req) => {
         const candidates = mlCards.slice(0, max);
         console.log(`[extract-product-list] macrolibrarsi: ${candidates.length} products (of ${numFound} total)`);
         if (candidates.length > 0) {
-          return new Response(
-            JSON.stringify({
+          return await finalize({
               candidates,
               total_links: candidates.length,
               total_available: numFound,
               source: "macrolibrarsi",
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
+            });
         }
       } catch (err) {
         console.log(`[extract-product-list] macrolibrarsi feed failed: ${err instanceof Error ? err.message : err}`);
@@ -1219,14 +1211,11 @@ serve(async (req) => {
 
           if (fgCards.length > 0) {
             const candidates = fgCards.slice(0, max);
-            return new Response(
-              JSON.stringify({
+            return await finalize({
                 candidates,
                 total_links: candidates.length,
                 source: "farmaciaguacci",
-              }),
-              { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-            );
+              });
           }
         } else {
           console.log("[extract-product-list] farmaciaguacci: no search term found in URL");
