@@ -1,12 +1,20 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'app.lovable.glutenbaby',
+  appId: 'com.richicook.glutenbaby',
   appName: 'Gluten Baby',
   webDir: 'dist',
-  server: {
-    url: 'https://0a9c4497-4df2-491e-b682-34391186be63.lovableproject.com?forceHideBadge=true',
-    cleartext: true,
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 2000,
+      launchAutoHide: true,
+      backgroundColor: '#ffffff',
+      androidSplashResourceName: 'splash',
+      androidScaleType: 'CENTER_CROP',
+      showSpinner: false,
+      splashFullScreen: true,
+      splashImmersive: true,
+    },
   },
 };
 
