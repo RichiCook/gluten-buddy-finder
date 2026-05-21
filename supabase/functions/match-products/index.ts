@@ -208,7 +208,23 @@ serve(async (req) => {
               },
             cereali: {
               boost: /\b(cereali|fiocch|corn\s?flakes|muesli|granola|anellin|palline|soffiett)/i,
-              penalize: /\b(pasta|spaghet|pennett?[eai]|fusill|rigatoni|maccheroni|tagliatell|lasagn|mafalda|multicereali|spaghetti)/i,
+              penalize: /\b(pasta|spaghet|pennett?[eai]|fusill|rigatoni|maccheroni|tagliatell|lasagn|mafalda|multicereali|spaghetti|farina|farine)/i,
+            },
+            merendina: {
+              boost: /\b(merendin|plumcake|brioche|brioss|kinder|fiesta|buond|girella|tegolino|camill|saccottin|panettonc|crostatin|krumir|wafer|barrett|snack|pan\s+di\s+spagna|soffic)/i,
+              penalize: /\b(farina|farine|mix|preparato|preparati|semola|lievito|impast|cracker|grissin)/i,
+            },
+            merendine: {
+              boost: /\b(merendin|plumcake|brioche|brioss|kinder|fiesta|buond|girella|tegolino|camill|saccottin|panettonc|crostatin|krumir|wafer|barrett|snack|pan\s+di\s+spagna|soffic)/i,
+              penalize: /\b(farina|farine|mix|preparato|preparati|semola|lievito|impast|cracker|grissin)/i,
+            },
+            dolci: {
+              boost: /\b(merendin|plumcake|brioche|brioss|girella|tegolino|saccottin|panettonc|crostatin|wafer|barrett|snack|pan\s+di\s+spagna|soffic|torta|muffin|cupcake|biscott|frollin|cioccolat)/i,
+              penalize: /\b(farina|farine|mix|preparato|preparati|semola|lievito|impast|pasta\s+secca|spaghet|penn[ei]|fusill|rigatoni)/i,
+            },
+            snack: {
+              boost: /\b(snack|merendin|barrett|wafer|crackers?|grissin|tarallin|patatin|pop\s?corn|crostin|sfizio|chips)/i,
+              penalize: /\b(farina|farine|mix|preparato|preparati|semola|lievito|pasta\s+secca|spaghet)/i,
             },
             cacao: {
               boost: /^(cacao|cocoa)\b|\bcacao\s+(amaro|in\s+polvere|dolce|puro|magro)\b|\bpolvere\s+di\s+cacao\b/i,
