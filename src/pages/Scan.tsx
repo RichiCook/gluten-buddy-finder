@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Camera, ImagePlus, Loader2, Sparkles } from "lucide-react";
+import { Camera, ImagePlus, Loader2 } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -75,7 +75,7 @@ export default function Scan() {
           ) : (
             <div className="flex flex-col items-center justify-center py-4 text-center">
               <div className="mb-3 rounded-full bg-gradient-primary p-4 shadow-glow">
-                <Sparkles className="h-6 w-6 text-primary-foreground" />
+                <Camera className="h-6 w-6 text-primary-foreground" />
               </div>
               <p className="text-xs text-muted-foreground">
                 Pronto a scansionare il tuo prossimo pasto?
