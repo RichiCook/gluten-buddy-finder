@@ -17,8 +17,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { Loader2, Trash2, Wand2, Download, Edit } from "lucide-react";
+import { Loader2, Trash2, Wand2, Download, Edit, FileSpreadsheet } from "lucide-react";
 import { AnalyticsDashboard } from "@/components/AnalyticsDashboard";
+import * as XLSX from "xlsx";
 
 const CATEGORIES = [
   "pasta", "biscotti", "pane", "farina",
