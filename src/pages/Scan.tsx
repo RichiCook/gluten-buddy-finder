@@ -1,19 +1,67 @@
-import { useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
-import { Camera, ImagePlus, Loader2 } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import {
+  Camera,
+  ImagePlus,
+  Search,
+  Loader2,
+  AlertTriangle,
+  Check,
+  ArrowUpRight,
+} from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { trackEvent } from "@/lib/analytics";
+import { cn } from "@/lib/utils";
+
+type RecentScan = {
+  id: string;
+  ai_dish_name: string | null;
+  ai_kind: string | null;
+  ai_ingredients: any;
+  created_at: string;
+};
 
 export default function Scan() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const fileInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
+
+  const firstName = useMemo(() => {
+    const meta = user?.user_metadata?.display_name as string | undefined;
+    if (meta) {
+      const first = meta.trim().split(/\s+/)[0];
+      return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+    }
+    if (user?.email) {
+      const local = user.email.split("@")[0];
+      const first = local.split(/[\s.\-_]/)[0];
+      return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+    }
+    return "";
+  }, [user]);
+
+  const initials = useMemo(() => {
+    if (!firstName) return "GB";
+    return firstName.slice(0, 2).toUpperCase();
+  }, [firstName]);
+
+  useEffect(() => {
+    if (!user) return;
+    void supabase
+      .from("scans")
+      .select("id, ai_dish_name, ai_kind, ai_ingredients, created_at")
+      .order("created_at", { ascending: false })
+      .limit(6)
+      .then(({ data }) => {
+        if (data) setRecentScans(data as RecentScan[]);
+      });
+  }, [user]);
 
   async function handleFile(file: File) {
     if (!file) return;
@@ -22,7 +70,6 @@ export default function Scan() {
       // Comprimi e ridimensiona la foto: evita superare la quota di sessionStorage
       // e riduce i tempi di upload all'AI.
       const dataUrl = await fileToCompressedDataUrl(file, 1280, 0.82);
-      setPreview(dataUrl);
 
       const { data, error } = await supabase.functions.invoke("recognize-image", {
         body: { imageDataUrl: dataUrl },
@@ -52,66 +99,94 @@ export default function Scan() {
     }
   }
 
+  const topbar = (
+    <div className="flex items-center justify-between">
+      <div className="text-sm text-muted-foreground">
+        {firstName ? (
+          <>
+            Ciao,{" "}
+            <span className="font-medium text-foreground">{firstName}</span>
+          </>
+        ) : (
+          <Link to="/auth" className="font-medium text-primary">
+            Accedi
+          </Link>
+        )}
+      </div>
+      {user ? (
+        <Link
+          to="/account"
+          className="grid h-9 w-9 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
+        >
+          {initials}
+        </Link>
+      ) : (
+        <span className="text-xs font-medium tracking-tight text-primary">
+          Gluten Baby
+        </span>
+      )}
+    </div>
+  );
+
   return (
-    <AppLayout>
-      <div className="space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-foreground">
-            Trova prodotti senza glutine
+    <AppLayout topbar={topbar}>
+      <div className="space-y-7">
+        {/* Hero */}
+        <div className="pt-2">
+          <h1 className="text-3xl font-medium leading-tight tracking-tight text-foreground">
+            Cosa scansioni
+            <br />
+            oggi?
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Scatta una foto a un prodotto o a un piatto: troviamo per te le
-            alternative gluten-free.
+            Punta la fotocamera su un piatto o un'etichetta
           </p>
         </div>
 
-        <Card className="mx-auto max-w-xs overflow-hidden border-2 border-dashed border-primary/30 bg-card/10 backdrop-blur-[2px] p-4 shadow-soft">
-          {preview ? (
-            <img
-              src={preview}
-              alt="anteprima"
-              className="mx-auto max-h-48 rounded-lg object-contain"
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center py-4 text-center">
-              <div className="mb-3 rounded-full bg-gradient-primary p-4 shadow-glow">
-                <Camera className="h-6 w-6 text-primary-foreground" />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Pronto a scansionare il tuo prossimo pasto?
-              </p>
-            </div>
+        {/* Primary pill CTA — Apple-style dark pill */}
+        <button
+          type="button"
+          onClick={() => cameraInput.current?.click()}
+          disabled={loading}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-full px-5 py-4 text-background transition active:scale-[0.98] disabled:opacity-70",
+            "bg-foreground",
           )}
-        </Card>
-
-        <div className="mx-auto grid max-w-xs grid-cols-1 gap-3">
-          <Button
-            size="lg"
-            className="h-12 text-base bg-gradient-primary shadow-glow"
-            disabled={loading}
-            onClick={() => cameraInput.current?.click()}
-          >
+        >
+          <div className="grid h-9 w-9 place-items-center rounded-full bg-background/15">
             {loading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
-              <>
-                <Camera className="h-5 w-5" />
-                Scatta una foto
-              </>
+              <Camera className="h-5 w-5" />
             )}
-          </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            className="h-12 text-base bg-background/10 backdrop-blur-[2px]"
-            disabled={loading}
+          </div>
+          <span className="flex-1 text-left text-base font-medium tracking-tight">
+            {loading ? "Sto analizzando…" : "Apri fotocamera"}
+          </span>
+          <ArrowUpRight className="h-5 w-5 opacity-60" />
+        </button>
+
+        {/* Secondary chip row */}
+        <div className="flex gap-2">
+          <button
+            type="button"
             onClick={() => fileInput.current?.click()}
+            disabled={loading}
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-border bg-card/60 px-3 py-3 text-sm font-medium text-foreground transition active:scale-[0.98] disabled:opacity-50"
           >
-            <ImagePlus className="h-5 w-5" />
-            Carica dalla galleria
-          </Button>
+            <ImagePlus className="h-4 w-4" />
+            Galleria
+          </button>
+          <Link
+            to="/sfoglia"
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-border bg-card/60 px-3 py-3 text-sm font-medium text-foreground transition active:scale-[0.98]"
+          >
+            <Search className="h-4 w-4" />
+            Cerca
+          </Link>
         </div>
 
+        {/* Hidden file inputs */}
         <input
           ref={cameraInput}
           type="file"
@@ -128,10 +203,74 @@ export default function Scan() {
           onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
         />
 
-        {loading && (
-          <p className="text-center text-sm text-muted-foreground">
-            🔍 Sto analizzando l'immagine con l'AI…
-          </p>
+        {/* Recenti rail (only if signed in and has at least one scan) */}
+        {user && recentScans.length > 0 && (
+          <div>
+            <div className="mb-2 flex items-baseline justify-between">
+              <h2 className="text-base font-medium tracking-tight text-foreground">
+                Recenti
+              </h2>
+              <Link to="/favorites" className="text-xs text-primary">
+                Vedi tutti
+              </Link>
+            </div>
+            <div className="-mx-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="flex gap-2.5">
+                {recentScans.map((s) => {
+                  const ings = Array.isArray(s.ai_ingredients)
+                    ? s.ai_ingredients
+                    : [];
+                  const hasGluten = ings.length > 0;
+                  return (
+                    <div
+                      key={s.id}
+                      className="w-24 flex-shrink-0 rounded-2xl bg-card p-2 shadow-sm"
+                    >
+                      <div className="grid h-16 w-full place-items-center rounded-xl bg-secondary text-primary">
+                        <Camera className="h-6 w-6" />
+                      </div>
+                      <div className="mt-2 line-clamp-1 text-xs font-medium leading-tight text-foreground">
+                        {s.ai_dish_name || "Senza titolo"}
+                      </div>
+                      <div
+                        className={cn(
+                          "mt-1 flex items-center gap-0.5 text-[10px] font-medium",
+                          hasGluten ? "text-destructive" : "text-emerald-700",
+                        )}
+                      >
+                        {hasGluten ? (
+                          <>
+                            <AlertTriangle className="h-2.5 w-2.5" />
+                            Glutine
+                          </>
+                        ) : (
+                          <>
+                            <Check className="h-2.5 w-2.5" />
+                            Sicuro
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Sign-in prompt for anonymous */}
+        {!user && (
+          <div className="rounded-2xl border border-border bg-card/60 p-5 text-center">
+            <p className="mb-3 text-sm text-muted-foreground">
+              Accedi per salvare le tue scansioni e i prodotti preferiti
+            </p>
+            <Link
+              to="/auth"
+              className="inline-block rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
+            >
+              Accedi
+            </Link>
+          </div>
         )}
       </div>
     </AppLayout>

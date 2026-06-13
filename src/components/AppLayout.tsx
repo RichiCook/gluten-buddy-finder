@@ -4,7 +4,15 @@ import appBackground from "@/assets/app-background.jpeg";
 
 import { Link } from "react-router-dom";
 
-export function AppLayout({ children, title }: { children: ReactNode; title?: string }) {
+export function AppLayout({
+  children,
+  title,
+  topbar,
+}: {
+  children: ReactNode;
+  title?: string;
+  topbar?: ReactNode;
+}) {
   return (
     <div className="relative min-h-screen pb-24">
       <div
@@ -14,15 +22,19 @@ export function AppLayout({ children, title }: { children: ReactNode; title?: st
           backgroundSize: 'min(100%, 420px) auto',
         }}
       />
-      <header className="sticky top-0 z-30 border-b border-border/50 bg-transparent backdrop-blur-md">
-        <div className="relative mx-auto flex max-w-lg items-center justify-center px-4 py-3">
-          <Link to="/" className="flex items-center gap-2">
-            <span className="text-lg font-bold tracking-tight text-primary">Gluten Baby</span>
-          </Link>
-          {title && (
-            <span className="absolute right-4 text-sm font-medium text-muted-foreground">
-              {title}
-            </span>
+      <header className="sticky top-0 z-30 bg-transparent backdrop-blur-md">
+        <div className="mx-auto max-w-lg px-4 py-3">
+          {topbar ?? (
+            <div className="relative flex items-center justify-center">
+              <Link to="/" className="flex items-center gap-2">
+                <span className="text-lg font-bold tracking-tight text-primary">Gluten Baby</span>
+              </Link>
+              {title && (
+                <span className="absolute right-0 text-sm font-medium text-muted-foreground">
+                  {title}
+                </span>
+              )}
+            </div>
           )}
         </div>
       </header>

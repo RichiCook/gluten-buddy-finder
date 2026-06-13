@@ -7,6 +7,7 @@ import Scan from "./pages/Scan";
 import Confirm from "./pages/Confirm";
 import Results from "./pages/Results";
 import Favorites from "./pages/Favorites";
+import Sfoglia from "./pages/Sfoglia";
 import Account from "./pages/Account";
 import Auth from "./pages/Auth";
 import Admin from "./pages/Admin";
@@ -25,6 +26,7 @@ const App = () => (
           <Route path="/confirm" element={<Confirm />} />
           <Route path="/results" element={<Results />} />
           <Route path="/favorites" element={<Favorites />} />
+          <Route path="/sfoglia" element={<Sfoglia />} />
           <Route path="/account" element={<Account />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/admin" element={<Admin />} />
