@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+
+# Supabase CLI cache (local temp state, not source code)
+supabase/.temp/

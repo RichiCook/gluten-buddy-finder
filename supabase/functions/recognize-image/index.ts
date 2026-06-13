@@ -60,19 +60,23 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY non configurata");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY non configurata");
 
+    // Google Generative Language API — OpenAI-compatible endpoint.
+    // Lets us reuse the same {messages, tools, tool_choice} request shape
+    // we used through the Lovable gateway. Same Bearer auth, same response.
+    // Docs: https://ai.google.dev/gemini-api/docs/openai
     const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${GEMINI_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
+          model: "gemini-2.5-flash",
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             {
@@ -159,11 +163,11 @@ serve(async (req) => {
           },
         );
       }
-      if (response.status === 402) {
+      if (response.status === 402 || response.status === 403) {
         return new Response(
           JSON.stringify({
             error:
-              "Crediti AI esauriti. Aggiungi crediti al workspace Lovable.",
+              "Quota Gemini esaurita o accesso negato. Controlla il tuo piano su https://aistudio.google.com.",
           }),
           {
             status: 402,

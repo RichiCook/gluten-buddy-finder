@@ -106,10 +106,22 @@ All colors MUST be HSL. */
     @apply border-border;
   }
 
-  body {
+  html, body {
     @apply bg-background text-foreground;
     font-family: 'Nunito Sans', system-ui, sans-serif;
     font-feature-settings: "ss01", "cv11";
+    /* Let the background extend behind iOS status bar / home indicator */
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  body {
+    /* Push actual content below the iOS status bar / Dynamic Island
+       and above the home indicator. Falls back to 0 on non-iOS. */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 }
 
