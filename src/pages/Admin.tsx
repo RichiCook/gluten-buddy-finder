@@ -17,8 +17,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { Loader2, Trash2, Wand2, Download, Edit } from "lucide-react";
+import { Loader2, Trash2, Wand2, Download, Edit, FileSpreadsheet } from "lucide-react";
 import { AnalyticsDashboard } from "@/components/AnalyticsDashboard";
+import * as XLSX from "xlsx";
 
 const CATEGORIES = [
   "pasta", "biscotti", "pane", "farina",
@@ -154,6 +155,31 @@ function ProductList() {
       )
     : items;
 
+  function exportToExcel() {
+    const rows = filtered.map((p: any) => ({
+      ID: p.id,
+      Nome: p.name,
+      Brand: p.brand || "",
+      Categoria: p.category,
+      Descrizione: p.description || "",
+      "URL Prodotto": p.product_url,
+      "URL Immagine": p.image_url || "",
+      "Tag Ingredienti": Array.isArray(p.ingredient_tags) ? p.ingredient_tags.join(", ") : "",
+      "Creato il": p.created_at || "",
+      "Aggiornato il": p.updated_at || "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 36 }, { wch: 40 }, { wch: 20 }, { wch: 14 }, { wch: 50 },
+      { wch: 50 }, { wch: 50 }, { wch: 40 }, { wch: 20 }, { wch: 20 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Prodotti");
+    const date = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `glutenbaby-prodotti-${date}.xlsx`);
+    toast.success(`Esportati ${rows.length} prodotti`);
+  }
+
   return (
     <div className="space-y-3">
       <Input
@@ -161,9 +187,15 @@ function ProductList() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
-      <p className="text-sm text-muted-foreground">
-        {filtered.length} di {items.length} prodotti
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          {filtered.length} di {items.length} prodotti
+        </p>
+        <Button size="sm" variant="outline" onClick={exportToExcel} disabled={!filtered.length}>
+          <FileSpreadsheet className="h-4 w-4" />
+          Esporta Excel
+        </Button>
+      </div>
       {filtered.map((p) => (
         <Card key={p.id} className="flex items-center gap-3 p-3">
           <div className="h-14 w-14 shrink-0 rounded bg-muted">
