@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, ShoppingCart, Star, ImageOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthGate } from "@/hooks/useAuthGate";
 import { toast } from "sonner";
 import { trackEvent } from "@/lib/analytics";
 
@@ -23,6 +24,7 @@ interface Product {
 export default function Results() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { requestAuth } = useAuthGate();
   const [matches, setMatches] = useState<{ ingredient: any; products: Product[] }[]>([]);
   const [dishName, setDishName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -61,11 +63,9 @@ export default function Results() {
   }
 
   async function toggleFav(p: Product) {
-    if (!user) {
-      toast.info("Accedi per salvare i preferiti");
-      navigate("/auth?redirect=/results");
-      return;
-    }
+    // If we get here without a user, the auth gate already opened the modal
+    // and re-invoked toggleFav via the pending-action callback once signed in.
+    if (!user) return;
     if (favIds.has(p.id)) {
       await supabase.from("favorites").delete().eq("product_id", p.id).eq("user_id", user.id);
       const next = new Set(favIds);
@@ -82,6 +82,13 @@ export default function Results() {
       setFavIds(new Set(favIds).add(p.id));
       toast.success("Salvato nei preferiti");
     }
+  }
+
+  function requestToggleFav(p: Product) {
+    requestAuth(
+      () => void toggleFav(p),
+      `Crea un account per salvare "${p.name}" nei tuoi preferiti.`,
+    );
   }
 
   return (
@@ -138,7 +145,7 @@ export default function Results() {
                         </div>
                       )}
                       <button
-                        onClick={() => toggleFav(p)}
+                        onClick={() => requestToggleFav(p)}
                         className="absolute right-2 top-2 rounded-full bg-card/95 p-2 shadow-soft"
                         aria-label="Salva preferito"
                       >
