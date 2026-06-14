@@ -139,7 +139,8 @@ export default function Scan() {
             oggi?
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Punta la fotocamera su un piatto o un'etichetta
+            Punta fotocamera su piatto o prodotto per trovare alternative senza
+            glutine
           </p>
         </div>
 
