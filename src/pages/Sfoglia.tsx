@@ -30,6 +30,101 @@ const CATEGORIES: { id: string; label: string; emoji: string }[] = [
   { id: "altro", label: "Altro", emoji: "⭐" },
 ];
 
+// Smart filter: when the DB `category` column is wrong (most products were
+// imported as "altro"), we also match products whose name contains any of
+// these patterns. So a product called "Frollini Schär" with category="altro"
+// still shows up when the user taps Biscotti.
+const CATEGORY_NAME_PATTERNS: Record<string, string[]> = {
+  pasta: [
+    "%past%",
+    "%spaghet%",
+    "%rigaton%",
+    "%fusill%",
+    "%tagliatell%",
+    "%lasagn%",
+    "%macher%",
+    "%penne%",
+    "%farfall%",
+    "%gnocch%",
+    "%maccheron%",
+    "%linguin%",
+    "%conchigli%",
+  ],
+  pane: [
+    "%pane%",
+    "%panin%",
+    "%fetta%",
+    "%fette%",
+    "%toast%",
+    "%piadin%",
+    "%baguette%",
+    "%ciabatt%",
+    "%grissin%",
+  ],
+  biscotti: [
+    "%biscot%",
+    "%frollin%",
+    "%cookie%",
+    "%wafer%",
+    "%savoiard%",
+    "%tarall%",
+    "%krumir%",
+    "%pavesin%",
+    "%macine%",
+    "%galletti%",
+    "%oro saiwa%",
+    "%gocciol%",
+    "%plasmon%",
+  ],
+  pizza: ["%pizz%", "%focacc%"],
+  bevande: [
+    "%birr%",
+    "%beer%",
+    "%succo%",
+    "%bevand%",
+    "%drink%",
+    "%coca%",
+    "%bibit%",
+    "%aperitiv%",
+    "%spritz%",
+    "%vino%",
+  ],
+  dolci: [
+    "%dolc%",
+    "%torta%",
+    "%tort%",
+    "%cake%",
+    "%cioccolat%",
+    "%plumcake%",
+    "%merendin%",
+    "%muffin%",
+    "%brioche%",
+    "%bignè%",
+    "%cannol%",
+    "%tiramisu%",
+    "%tiramisù%",
+  ],
+  snack: [
+    "%snack%",
+    "%chip%",
+    "%patatin%",
+    "%cracker%",
+    "%pretzel%",
+    "%pop corn%",
+    "%popcorn%",
+  ],
+  cereali: [
+    "%cereal%",
+    "%fiocch%",
+    "%muesl%",
+    "%granol%",
+    "%avena%",
+    "%corn flak%",
+  ],
+  farina: ["%farin%", "%flour%", "%amido%", "%fecola%"],
+  altro: [], // catch-all — no name patterns, falls back to category.eq
+};
+
 const PAGE_SIZE = 30;
 
 export default function Sfoglia() {
@@ -77,7 +172,17 @@ export default function Sfoglia() {
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
       if (category !== "all") {
-        query = query.eq("category", category as any);
+        // Smart category filter: match the DB enum value OR any name pattern
+        // that's characteristic of this category. Catches products that were
+        // imported with the wrong category enum but have a clear name.
+        const patterns = CATEGORY_NAME_PATTERNS[category] ?? [];
+        const orParts = [`category.eq.${category}`];
+        for (const p of patterns) {
+          // Escape commas in the pattern (would break PostgREST .or() syntax)
+          // and quote it in case it contains spaces.
+          orParts.push(`name.ilike.${p.replace(/,/g, "")}`);
+        }
+        query = query.or(orParts.join(","));
       }
       if (debouncedSearch) {
         const term = `%${debouncedSearch}%`;
