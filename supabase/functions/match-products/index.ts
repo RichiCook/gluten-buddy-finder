@@ -226,6 +226,26 @@ serve(async (req) => {
               boost: /\b(snack|merendin|barrett|wafer|crackers?|grissin|tarallin|patatin|pop\s?corn|crostin|sfizio|chips)/i,
               penalize: /\b(farina|farine|mix|preparato|preparati|semola|lievito|pasta\s+secca|spaghet)/i,
             },
+            // ── Biscotti family ─────────────────────────────────────────
+            // Reported pattern (26 Jun 2026): "frollini gocce di cioccolato"
+            // → matcher returned dolci-style products (plumcake, merendine)
+            // instead of actual cookies. Boost cookie-shapes, penalise cakes.
+            biscotti: {
+              boost: /\b(biscott|frollin|cookie|wafer|savoiard|tarall|krumir|pavesin|macine|galletti|gocciol|baiocchi|plasmon|abbracc|nascondin|campagnol)/i,
+              penalize: /\b(torta|cake|plumcake|merendin|muffin|brioche|brioss|girella|tegolino|saccottin|panettonc|farina|farine|mix|preparato|preparati|impast)/i,
+            },
+            biscotto: {
+              boost: /\b(biscott|frollin|cookie|wafer|savoiard|tarall|krumir|pavesin|macine|galletti|gocciol|baiocchi|plasmon|abbracc|nascondin|campagnol)/i,
+              penalize: /\b(torta|cake|plumcake|merendin|muffin|brioche|brioss|girella|tegolino|saccottin|panettonc|farina|farine|mix|preparato|preparati|impast)/i,
+            },
+            frollini: {
+              boost: /\b(frollin|biscott|cookie|gocciol|baiocchi|nascondin|abbracc|pavesin|macine|galletti|campagnol)/i,
+              penalize: /\b(torta|cake|plumcake|merendin|muffin|brioche|brioss|girella|tegolino|saccottin|panettonc|wafer|farina|farine|mix|preparato|preparati)/i,
+            },
+            frollino: {
+              boost: /\b(frollin|biscott|cookie|gocciol|baiocchi|nascondin|abbracc|pavesin|macine|galletti|campagnol)/i,
+              penalize: /\b(torta|cake|plumcake|merendin|muffin|brioche|brioss|girella|tegolino|saccottin|panettonc|wafer|farina|farine|mix|preparato|preparati)/i,
+            },
             cacao: {
               boost: /^(cacao|cocoa)\b|\bcacao\s+(amaro|in\s+polvere|dolce|puro|magro)\b|\bpolvere\s+di\s+cacao\b/i,
               penalize: /\b(biscott|merendin|snack|frollin|wafer|barrett|cioccolat|crema|torta|brioche|plumcake|muffin|cereali|fiocch)/i,
